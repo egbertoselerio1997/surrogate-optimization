@@ -77,8 +77,8 @@ def generate_figures(run: Path, output: Path):
     style()
     timing = pd.read_csv(tables / "timing_summary.csv")
     t = timing.set_index("route").loc[["surrogate", "mechanistic"]].reset_index()
-    if not t["metric"].eq("Time").all() or not t["unit"].eq("s").all():
-        raise ValueError("timing_summary.csv must report only Time in seconds")
+    if not t["metric"].eq("Optimization time").all() or not t["unit"].eq("s").all():
+        raise ValueError("timing_summary.csv must report Optimization time in seconds")
     labels = ["Surrogate", "Smooth NLP"]
     colors = [ORANGE, BLUE]
     fig, ax = plt.subplots(figsize=(6.8, 4.8), constrained_layout=True)
@@ -96,8 +96,8 @@ def generate_figures(run: Path, output: Path):
     ax.set(
         xticks=np.arange(len(t)),
         xticklabels=labels,
-        ylabel="Time (s)",
-        title="Time across robustness cases",
+        ylabel="Optimization time (s)",
+        title="Optimization time across robustness cases",
     )
     save(fig, output, "optimization_time")
     with (
@@ -232,8 +232,12 @@ def generate_figures(run: Path, output: Path):
                     {
                         "projected_quality_component_r2": q_r2,
                         "projected_quality_component_nrmse": q_nrmse,
-                        "surrogate_primary_median_seconds": float(t.loc[0, "median"]),
-                        "mechanistic_primary_median_seconds": float(t.loc[1, "median"]),
+                        "surrogate_optimization_time_median_seconds": float(
+                            t.loc[0, "median"]
+                        ),
+                        "mechanistic_optimization_time_median_seconds": float(
+                            t.loc[1, "median"]
+                        ),
                         "paired_case_count": 0,
                         "surrogate_lower_economic_burden_cases": 0,
                         "surrogate_lower_quality_component_cases": 0,
@@ -324,8 +328,10 @@ def generate_figures(run: Path, output: Path):
             {
                 "projected_quality_component_r2": q_r2,
                 "projected_quality_component_nrmse": q_nrmse,
-                "surrogate_primary_median_seconds": float(t.loc[0, "median"]),
-                "mechanistic_primary_median_seconds": float(t.loc[1, "median"]),
+                "surrogate_optimization_time_median_seconds": float(t.loc[0, "median"]),
+                "mechanistic_optimization_time_median_seconds": float(
+                    t.loc[1, "median"]
+                ),
                 "surrogate_lower_economic_burden_cases": int(
                     (economic_s < economic_d).sum()
                 ),

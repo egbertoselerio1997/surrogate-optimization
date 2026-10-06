@@ -93,7 +93,7 @@ class UnifiedProductionProfileTests(unittest.TestCase):
         self.assertTrue(profile["counts_are_candidate_rows"])
         self.assertFalse(profile["replace_rejected_mechanistic_candidates"])
 
-    def test_removed_guardrails_and_primary_time_are_explicit(self) -> None:
+    def test_removed_guardrails_and_optimization_time_are_explicit(self) -> None:
         engineering = self.config["engineering"]
         for key in ("srt_min_d", "srt_max_d", "sor_max_m_d", "slr_max_kg_m2_d"):
             self.assertNotIn(key, engineering)
@@ -101,6 +101,6 @@ class UnifiedProductionProfileTests(unittest.TestCase):
             engineering["descriptive_quantities"], ["srt_d", "sor_m_d", "slr_kg_m2_d"]
         )
         reporting = self.config["reporting"]
-        self.assertEqual(reporting["timing_metric"], "Time")
+        self.assertEqual(reporting["timing_metric"], "Optimization time")
         self.assertEqual(reporting["timing_unit"], "s")
-        self.assertEqual(reporting["timing_protocol"], "primary_route_time")
+        self.assertEqual(reporting["timing_protocol"], "optimization_time")

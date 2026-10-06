@@ -688,25 +688,7 @@ def _route_elapsed(snapshot: RouteSnapshot) -> float:
     if snapshot.payload is not None:
         elapsed = _as_float(snapshot.payload.get("elapsed_seconds"))
         if math.isfinite(elapsed):
-            recovery = _as_float(
-                snapshot.recovery.get("elapsed_seconds")
-                if snapshot.recovery is not None
-                and snapshot.recovery.get("attempted") is True
-                else None
-            )
-            certificate = (
-                _mapping(snapshot.certification.get("certificate"))
-                if snapshot.certification is not None
-                else None
-            )
-            certification = _as_float(
-                certificate.get("elapsed_seconds") if certificate is not None else None
-            )
-            return (
-                elapsed
-                + (recovery if math.isfinite(recovery) else 0.0)
-                + (certification if math.isfinite(certification) else 0.0)
-            )
+            return elapsed
     values = [
         _as_float(stage.get("elapsed_seconds"))
         for start in snapshot.starts
@@ -2606,16 +2588,19 @@ def _timing_tables(
         )
         return (pd.DataFrame(), pd.DataFrame())
     ledger = ledger.loc[ledger["case"].astype(str).str.startswith("robustness_")].copy()
-    if not ledger["metric"].eq("Time").all() or not ledger["unit"].eq("s").all():
+    if (
+        not ledger["metric"].eq("Optimization time").all()
+        or not ledger["unit"].eq("s").all()
+    ):
         warnings.append(
-            "Robustness-case timing ledger has an invalid Time label or unit."
+            "Robustness-case timing ledger has an invalid optimization time label or unit."
         )
         return (pd.DataFrame(), pd.DataFrame())
     summary = pd.DataFrame(
         [
             {
                 "route": route,
-                "metric": "Time",
+                "metric": "Optimization time",
                 "unit": "s",
                 "source_scope": "robustness_01 through robustness_10",
                 **_finite_summary(

@@ -38,7 +38,7 @@ def _robustness_timing_summary(values: list[float]) -> dict[str, float | int | N
 def _run_robustness_case_timing_aggregation(
     run: Path, *, source_files: Mapping[str, str], analysis_id: str
 ) -> pd.DataFrame:
-    """Summarize primary route Time over the ten robustness cases."""
+    """Summarize optimization time across the ten robustness cases."""
     from surrogate_optimization.runtime.artifacts import atomic_dataframe
     from surrogate_optimization.runtime.artifacts import atomic_json
     from surrogate_optimization.runtime.contracts import _artifact_hashes
@@ -76,7 +76,7 @@ def _run_robustness_case_timing_aggregation(
             input_paths.extend((route_path, reference_path))
             time_seconds = float(route_payload["elapsed_seconds"])
             if not np.isfinite(time_seconds) or time_seconds < 0.0:
-                raise RuntimeError(f"{case_id} {route} has invalid Time")
+                raise RuntimeError(f"{case_id} {route} has invalid optimization time")
             rows.append(
                 {
                     "case": case_id,
@@ -86,7 +86,7 @@ def _run_robustness_case_timing_aggregation(
                         reference_payload.get("candidate_available")
                     ),
                     "comparison_valid": bool(reference_payload.get("comparison_valid")),
-                    "metric": "Time",
+                    "metric": "Optimization time",
                     "unit": "s",
                     "time_seconds": time_seconds,
                 }
@@ -126,10 +126,9 @@ def _run_robustness_case_timing_aggregation(
         {
             "timing_contract": contract,
             "protocol": TIMING_PROTOCOL,
-            "metric": "Time",
+            "metric": "Optimization time",
             "unit": "s",
-            "measurement": "primary route search only",
-            "source": "completed robustness/sensitivity cases only",
+            "source": "robustness cases",
             "nominal_case_included": False,
             "robustness_case_count": len(cases),
             "routes": routes,

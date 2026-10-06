@@ -37,7 +37,7 @@ supported.
 `complete_with_validation_failures`; inspect the audits before interpreting
 its results. `report/manifest.json` records reporting artifacts and their
 hashes. Figures show unavailable data explicitly when a route fails.
-`Time` measures only the primary route search, in seconds.
+Optimization time is reported in seconds.
 
 ## Tests and source
 

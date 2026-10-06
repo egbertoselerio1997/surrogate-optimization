@@ -281,11 +281,11 @@ def generate_figures(run: Path, output: Path) -> dict[str, str]:
         pd.read_csv(tables / "timing_summary.csv").set_index("route").reindex(ROUTES)
     )
     if not np.isfinite(timing["mean"]).any():
-        unavailable["optimization_time"] = "No primary search timing is available"
+        unavailable["optimization_time"] = "No optimization time is available"
     else:
         figure, axis = plt.subplots(figsize=(7, 5))
         axis.bar(ROUTES, timing["mean"], color=[ROUTE_COLORS[r] for r in ROUTES])
-        axis.set_ylabel("Mean primary search Time (s)")
+        axis.set_ylabel("Mean optimization time (s)")
         save(figure, output, "optimization_time")
     atomic_dataframe(
         output / "figure_index.csv",

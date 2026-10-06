@@ -117,6 +117,26 @@ def _make_run(root: Path, robustness_count: int = 2) -> None:
 
 
 class ReportingSnapshotTests(unittest.TestCase):
+    def test_route_status_time_is_the_primary_optimization_duration(self) -> None:
+        for route in ("surrogate", "mechanistic"):
+            with self.subTest(route=route):
+                snapshot = module_reporting_tables.RouteSnapshot(
+                    case="nominal",
+                    route=route,
+                    artifact_state="complete",
+                    outcome="selected",
+                    payload={"elapsed_seconds": 12.0},
+                    starts=(),
+                    selected_start=None,
+                    selected=None,
+                    selected_arrays={},
+                    reference_arrays={},
+                    casewise_reference=None,
+                    certification={"certificate": {"elapsed_seconds": 90.0}},
+                    recovery={"attempted": True, "elapsed_seconds": 120.0},
+                )
+                self.assertEqual(module_reporting_tables._route_elapsed(snapshot), 12.0)
+
     def test_reporting_geometry_separates_surrogate_and_mechanistic_widths(
         self,
     ) -> None:
@@ -586,7 +606,7 @@ class ReportingSnapshotTests(unittest.TestCase):
                         "case": "robustness_01",
                         "route": "surrogate",
                         "candidate_available": True,
-                        "metric": "Time",
+                        "metric": "Optimization time",
                         "unit": "s",
                         "time_seconds": 10.0,
                     },
@@ -594,7 +614,7 @@ class ReportingSnapshotTests(unittest.TestCase):
                         "case": "robustness_02",
                         "route": "surrogate",
                         "candidate_available": True,
-                        "metric": "Time",
+                        "metric": "Optimization time",
                         "unit": "s",
                         "time_seconds": 20.0,
                     },
@@ -602,7 +622,7 @@ class ReportingSnapshotTests(unittest.TestCase):
                         "case": "robustness_01",
                         "route": "mechanistic",
                         "candidate_available": True,
-                        "metric": "Time",
+                        "metric": "Optimization time",
                         "unit": "s",
                         "time_seconds": 12.0,
                     },
@@ -610,7 +630,7 @@ class ReportingSnapshotTests(unittest.TestCase):
                         "case": "robustness_02",
                         "route": "mechanistic",
                         "candidate_available": False,
-                        "metric": "Time",
+                        "metric": "Optimization time",
                         "unit": "s",
                         "time_seconds": 18.0,
                     },
@@ -618,7 +638,7 @@ class ReportingSnapshotTests(unittest.TestCase):
             ).to_csv(run / "metrics" / "robustness_case_timing.csv", index=False)
             bundle = build_reporting_tables(run)
             timing = bundle["timing_summary"].set_index("route")
-            self.assertTrue(timing["metric"].eq("Time").all())
+            self.assertTrue(timing["metric"].eq("Optimization time").all())
             self.assertTrue(timing["unit"].eq("s").all())
             self.assertAlmostEqual(timing.loc["surrogate", "mean"], 15.0)
             self.assertAlmostEqual(timing.loc["mechanistic", "mean"], 15.0)

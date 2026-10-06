@@ -63,10 +63,13 @@ def load_parameters(path: str | Path = PARAMETERS_PATH) -> dict[str, Any]:
         raise RuntimeError(
             f"prohibited engineering guardrails remain: {sorted(present)}"
         )
-    if reporting.get("timing_protocol") != "primary_route_time":
-        raise RuntimeError("only the primary route Time protocol is supported")
-    if reporting.get("timing_metric") != "Time" or reporting.get("timing_unit") != "s":
-        raise RuntimeError("the timing metric must be Time in seconds")
+    if reporting.get("timing_protocol") != "optimization_time":
+        raise RuntimeError("unsupported optimization timing protocol")
+    if (
+        reporting.get("timing_metric") != "Optimization time"
+        or reporting.get("timing_unit") != "s"
+    ):
+        raise RuntimeError("the timing metric must be Optimization time in seconds")
     return value
 
 

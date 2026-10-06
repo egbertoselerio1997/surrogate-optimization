@@ -299,7 +299,7 @@ def _mock_timing(run: Path, *_args: object, **_kwargs: object) -> pd.DataFrame:
             {
                 "case": f"robustness_{case:02d}",
                 "route": route,
-                "metric": "Time",
+                "metric": "Optimization time",
                 "unit": "s",
                 "time_seconds": 1.0,
             }
@@ -314,7 +314,7 @@ def _mock_timing(run: Path, *_args: object, **_kwargs: object) -> pd.DataFrame:
         run / "metrics/robustness_case_timing_summary.json",
         {
             "protocol": module_runtime_protocols.TIMING_PROTOCOL,
-            "metric": "Time",
+            "metric": "Optimization time",
             "unit": "s",
             "robustness_case_count": 10,
         },
@@ -378,14 +378,14 @@ class ProductionOptimizationHookTests(unittest.TestCase):
             means = frame.groupby("route")["time_seconds"].mean()
             self.assertAlmostEqual(means["surrogate"], 5.5)
             self.assertAlmostEqual(means["mechanistic"], 15.5)
-            self.assertTrue(frame["metric"].eq("Time").all())
+            self.assertTrue(frame["metric"].eq("Optimization time").all())
             self.assertTrue(frame["unit"].eq("s").all())
             self.assertNotIn("complete_optimization_seconds", frame)
             summary = json.loads(
                 (run / "metrics/robustness_case_timing_summary.json").read_text()
             )
             self.assertEqual(summary["robustness_case_count"], 10)
-            self.assertEqual(summary["metric"], "Time")
+            self.assertEqual(summary["metric"], "Optimization time")
             self.assertEqual(summary["unit"], "s")
 
     def test_full_hook_runs_11_cases_and_cross_evaluates_both_routes(self) -> None:
@@ -460,7 +460,7 @@ class ProductionOptimizationHookTests(unittest.TestCase):
                 "exact_reference_objective_components": np.full(6, 1.0 / 6.0).tolist(),
                 "local_convergence_certified": True,
                 "first_order_stationarity_certified": True,
-                "time_metric": "Time",
+                "time_metric": "Optimization time",
                 "time_unit": "s",
                 "time_seconds": route_payload["elapsed_seconds"],
                 "reference": {

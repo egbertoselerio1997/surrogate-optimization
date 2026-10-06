@@ -788,7 +788,7 @@ def _run_casewise_route_reference_evaluation(
         "native_model_error": _scaled_response_errors(
             native_response, reference, response_scale
         ),
-        "time_metric": "Time",
+        "time_metric": "Optimization time",
         "time_unit": "s",
         "time_seconds": time_seconds if np.isfinite(time_seconds) else None,
         "recovery": recovery_payload,
@@ -976,7 +976,7 @@ def _casewise_comparison_row(
         if control_difference is None
         else control_difference["maximum"],
         "objective_component_differences": component_differences,
-        "time_metric": "Time",
+        "time_metric": "Optimization time",
         "time_unit": "s",
         "surrogate_time_seconds": surrogate_seconds,
         "mechanistic_time_seconds": mechanistic_seconds,

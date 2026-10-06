@@ -257,7 +257,7 @@ def run_optimization_stage(
                 "optimizer_native_reference_nrmse": native_error.get("nrmse"),
                 "optimizer_native_reference_nmae": native_error.get("nmae"),
                 "optimizer_native_reference_scaled_inf": native_error.get("scaled_inf"),
-                "time_metric": "Time",
+                "time_metric": "Optimization time",
                 "time_unit": "s",
                 "time_seconds": evaluation.get("time_seconds"),
             }
