@@ -11,13 +11,9 @@ import unittest
 from unittest.mock import patch
 
 from surrogate_optimization.reporting import finalization
-from surrogate_optimization.reporting.figures import (
-    comparison,
-    emulation,
-    insights,
-    nominal_parity,
-)
-from surrogate_optimization.reporting.figures.common import unavailable_figure
+from surrogate_optimization.reporting.figures import comparison, package
+from surrogate_optimization.reporting.figures.common import export_figure
+import matplotlib.pyplot as plt
 from surrogate_optimization.runtime.artifacts import atomic_json
 from surrogate_optimization.runtime.contracts import (
     _artifacts_match,
@@ -42,16 +38,18 @@ class ReportingFinalizationTests(unittest.TestCase):
 
     def _renderers(self):
         stack = ExitStack()
-        for module in (comparison, emulation, insights, nominal_parity):
-            stack.enter_context(patch.object(module, "SIDECARS", ()))
-            stack.enter_context(patch.object(module, "FIGURES", {"fixture": ("png",)}))
-            stack.enter_context(
-                patch.object(
-                    module,
-                    "generate_figures",
-                    return_value={"fixture": "No validated decision"},
-                )
-            )
+
+        def charts(run, output):
+            output.mkdir(parents=True, exist_ok=True)
+            for stem in comparison.FIGURES:
+                (output / f"{stem}.png").write_bytes(b"figure fixture")
+            for name in comparison.SIDECARS:
+                (output / name).write_text("fixture metadata")
+            return {}
+
+        stack.enter_context(
+            patch.object(package, "generate_figures", side_effect=charts)
+        )
 
         def tables(run, **_kwargs):
             atomic_json(run / "report/tables/report_manifest.json", {"tables": []})
@@ -72,13 +70,11 @@ class ReportingFinalizationTests(unittest.TestCase):
                     run, source_files=sources, scientific_passed=False
                 )
                 self.assertEqual(result["status"], "complete_with_validation_failures")
-                self.assertEqual(len(result["figures"]), 4)
-                self.assertTrue(
-                    all(not row["data_available"] for row in result["figures"])
-                )
+                self.assertEqual(len(result["figures"]), 8)
+                self.assertTrue(all(row["data_available"] for row in result["figures"]))
                 self.assertTrue(_artifacts_match(run, result["artifacts"]))
                 with patch.object(
-                    comparison,
+                    package,
                     "generate_figures",
                     side_effect=AssertionError("render repeated"),
                 ):
@@ -123,7 +119,9 @@ class ReportingFinalizationTests(unittest.TestCase):
                 finalization.finalize_reporting(
                     run, source_files=sources, scientific_passed=False
                 )
-                (run / "report/figures/comparison/fixture.png").write_bytes(b"corrupt")
+                (run / "report/figures/q01_holdout_accuracy_overview.png").write_bytes(
+                    b"corrupt"
+                )
                 with self.assertRaisesRegex(
                     RuntimeError, "reporting artifacts changed"
                 ):
@@ -138,7 +136,7 @@ class ReportingFinalizationTests(unittest.TestCase):
             with (
                 self._renderers(),
                 patch.object(
-                    comparison,
+                    package,
                     "generate_figures",
                     side_effect=ValueError("corrupt input"),
                 ),
@@ -149,16 +147,11 @@ class ReportingFinalizationTests(unittest.TestCase):
                     )
             self.assertFalse((run / "complete.json").exists())
 
-    def test_all_export_formats_are_nonempty(self):
+    def test_png_export_is_nonempty(self):
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory)
-            unavailable_figure(
-                output,
-                "unavailable",
-                ("png", "svg", "pdf"),
-                "The scientific route failed",
-            )
-            for extension in ("png", "svg", "pdf"):
-                self.assertGreater(
-                    (output / f"unavailable.{extension}").stat().st_size, 0
-                )
+            figure, axis = plt.subplots()
+            axis.plot([1, 2], [3, 4])
+            path = Path(directory) / "figure.png"
+            export_figure(figure, path)
+            plt.close(figure)
+            self.assertGreater(path.stat().st_size, 0)

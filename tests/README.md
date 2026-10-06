@@ -11,3 +11,6 @@ For unit tests only, use `-s tests/unit`. `unit` covers current numerical contra
 The integration test can take substantially longer than the unit suite. It writes to `results/validation_refactor_<timestamp>`; set `SURROGATE_OPTIMIZATION_VALIDATION_RUN_ID` to reuse an unchanged validation run. Reusing a completed run checks resumption. Scientific quality gates may fail for this small sample; tests require truthful status and complete artifacts.
 
 No full 10000-candidate production run or complete historical-output comparison is part of these checks. See [refactor record](REFACTORING.md).
+
+The reference chart tests check the exact eight PNG layouts and strict scenario
+coverage. No incomplete package is filled with synthetic placeholder figures.

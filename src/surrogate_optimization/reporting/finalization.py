@@ -27,13 +27,7 @@ def reporting_sources() -> dict[str, str]:
 def finalize_reporting(
     run: Path, *, source_files: Mapping[str, str], scientific_passed: bool
 ) -> dict:
-    from surrogate_optimization.reporting.figures import (
-        comparison,
-        emulation,
-        insights,
-        nominal_parity,
-    )
-    from surrogate_optimization.reporting.figures.common import unavailable_figure
+    from surrogate_optimization.reporting.figures import comparison, package
 
     (run / "complete.json").unlink(missing_ok=True)
     computation_digest = source_digest(source_files)
@@ -73,32 +67,21 @@ def finalize_reporting(
     figures = []
     expected_paths = [run / "report/tables" / f"{name}.csv" for name in bundle.tables]
     expected_paths.append(run / "report/tables/report_manifest.json")
-    for family, renderer in (
-        ("comparison", comparison),
-        ("emulation", emulation),
-        ("insights", insights),
-        ("nominal_parity", nominal_parity),
-    ):
-        output = run / "report/figures" / family
-        output.mkdir(parents=True, exist_ok=True)
-        availability = renderer.generate_figures(run, output)
-        for stem, formats in renderer.FIGURES.items():
-            reason = availability.get(stem)
-            if reason:
-                unavailable_figure(output, stem, formats, reason)
-            for extension in formats:
-                path = output / f"{stem}.{extension}"
-                if not path.is_file() or path.stat().st_size == 0:
-                    raise RuntimeError(f"required figure was not written: {path}")
-                figures.append(
-                    {
-                        "path": path.relative_to(run).as_posix(),
-                        "data_available": reason is None,
-                        "reason": reason,
-                    }
-                )
-                expected_paths.append(path)
-        expected_paths.extend(output / name for name in renderer.SIDECARS)
+    output = run / "report/figures"
+    package.generate_figures(run, output)
+    for stem in comparison.FIGURES:
+        path = output / f"{stem}.png"
+        if not path.is_file() or path.stat().st_size == 0:
+            raise RuntimeError(f"required figure was not written: {path}")
+        figures.append(
+            {
+                "path": path.relative_to(run).as_posix(),
+                "data_available": True,
+                "reason": None,
+            }
+        )
+        expected_paths.append(path)
+    expected_paths.extend(output / name for name in comparison.SIDECARS)
     assert_source_unchanged(source_files)
     if reporting_sources() != reporting_manifest:
         raise RuntimeError("reporting source changed during rendering")

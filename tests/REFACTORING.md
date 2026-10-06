@@ -80,3 +80,25 @@ Run unit checks and the real reduced integration workload. Preserve execution lo
 - Earlier interrupted validation attempts were preserved. The source-change guard rejected an in-progress run after implementation changes.
 - Ignored bytecode from the former source folders was archived under `.tools/retired_bytecode`; those old folders no longer exist in the source tree.
 - No full 10000-candidate production execution or complete historical numerical-output comparison was performed.
+
+## Eight-figure reporting revision
+
+The reporting workflow now publishes only the eight untitled numbered PNGs
+specified by `generate-reference-result-charts`. The three supplemental chart
+modules were removed. The established layouts were reused, with target-owned
+data, complete N/S1?S10 coverage, chart metadata, and no timing disclaimers.
+Missing required responses stop publication. The earlier 18-figure validation
+record above describes the prior refactor, not the current figure selection.
+
+Verification of the eight-figure revision: all 139 unit tests passed. The
+standalone generator ran against the supplied reference run into
+`.tools/reference-chart-preview`. It produced exactly eight nonempty PNGs,
+zero SVG/PDF exports, eight resolving index rows, and the package README and
+numerical metadata. Representative accuracy, parity, control, profile,
+objective, and time figures were inspected. Every scientific input used by
+the generator retained its original file hash.
+
+The reference-data holdout composite nRMSE is 0.04690 for raw predictions and
+0.04306 for projected predictions. Mean location R? is 0.925245 and 0.937632
+respectively. These values describe the supplied target, not a newly executed
+production workload.

@@ -24,7 +24,7 @@ uv run python -u -m surrogate_optimization.cli.run_study `
 The production workload attempts 8,000 development candidates and 2,000
 holdout candidates. Rejected candidates are recorded and are not replaced.
 It evaluates the nominal case and ten robustness cases with both methods,
-then writes exact replays, audits, tables, and figures. A complete run can take
+then writes exact replays, audits, tables, and eight PNG figures. A complete run can take
 hours or days.
 
 All outputs are in `results/<run-id>`. Use `--through generation` or
@@ -36,7 +36,8 @@ supported.
 `run_state.json` records execution status. A finished workload can report
 `complete_with_validation_failures`; inspect the audits before interpreting
 its results. `report/manifest.json` records reporting artifacts and their
-hashes. Figures show unavailable data explicitly when a route fails.
+hashes. The eight numbered PNGs and their chart index, numerical summary, and guide
+are in `report/figures`. Missing required scenario data stop chart publication.
 Optimization time is reported in seconds.
 
 ## Tests and source
