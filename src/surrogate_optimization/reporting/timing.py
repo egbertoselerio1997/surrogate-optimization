@@ -6,6 +6,7 @@ from typing import Any
 from typing import Mapping
 import numpy as np
 import pandas as pd
+from surrogate_optimization.reporting.labels import presentation_table, ROUTE_LABELS
 
 
 def _robustness_timing_summary(values: list[float]) -> dict[str, float | int | None]:
@@ -113,7 +114,7 @@ def _run_robustness_case_timing_aggregation(
             run, marker.get("artifacts", {})
         ):
             return pd.read_csv(ledger_path)
-    ledger = pd.DataFrame(rows)
+    ledger = presentation_table(pd.DataFrame(rows))
     routes = {
         str(route): _robustness_timing_summary(
             pd.to_numeric(group["time_seconds"], errors="coerce").tolist()
@@ -132,6 +133,7 @@ def _run_robustness_case_timing_aggregation(
             "nominal_case_included": False,
             "robustness_case_count": len(cases),
             "routes": routes,
+            "route_labels": ROUTE_LABELS,
         },
     )
     atomic_json(

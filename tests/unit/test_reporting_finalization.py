@@ -53,6 +53,7 @@ class ReportingFinalizationTests(unittest.TestCase):
 
         def tables(run, **_kwargs):
             atomic_json(run / "report/tables/report_manifest.json", {"tables": []})
+            (run / "report/tables/README.md").write_text("Table guide")
             return SimpleNamespace(tables={})
 
         stack.enter_context(

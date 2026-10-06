@@ -8,3 +8,8 @@ Tests: `test_reporting.py`, reporting finalization tests, and the reduced integr
 
 The chart package is published directly in `report/figures`. Missing required
 scenario data prevent reporting completion; numerical checkpoints remain reusable.
+
+`labels.py` supplies shared chart and table vocabulary. Tables include display
+labels for methods, influent scenarios, responses, and locations alongside
+artifact identifiers. Their manifest records column labels and units; the
+generated table README explains metric definitions and objective components.

@@ -86,7 +86,7 @@ Run unit checks and the real reduced integration workload. Preserve execution lo
 The reporting workflow now publishes only the eight untitled numbered PNGs
 specified by `generate-reference-result-charts`. The three supplemental chart
 modules were removed. The established layouts were reused, with target-owned
-data, complete N/S1?S10 coverage, chart metadata, and no timing disclaimers.
+data, complete N/S1–S10 coverage, chart metadata, and no timing disclaimers.
 Missing required responses stop publication. The earlier 18-figure validation
 record above describes the prior refactor, not the current figure selection.
 
@@ -99,6 +99,13 @@ objective, and time figures were inspected. Every scientific input used by
 the generator retained its original file hash.
 
 The reference-data holdout composite nRMSE is 0.04690 for raw predictions and
-0.04306 for projected predictions. Mean location R? is 0.925245 and 0.937632
+0.04306 for projected predictions. Mean location R² is 0.925245 and 0.937632
 respectively. These values describe the supplied target, not a newly executed
 production workload.
+
+Reporting terminology revision: tables, timing ledgers, chart legends, and chart
+metadata share method, scenario, response, location, and control labels.
+Generated table guides and manifests record units and distinguish coordinate
+errors from the charts' composite metrics. Artifact identifiers and scientific
+values are preserved. The revised unit suite passes 143 tests; no full production
+run or historical numerical-output comparison was performed.

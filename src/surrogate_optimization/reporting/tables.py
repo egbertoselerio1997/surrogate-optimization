@@ -14,6 +14,12 @@ import math
 import numpy as np
 import pandas as pd
 import zipfile
+from surrogate_optimization.reporting.labels import (
+    presentation_table,
+    vocabulary,
+    TABLE_GUIDE,
+)
+from surrogate_optimization.runtime.artifacts import atomic_bytes
 
 CONTROL_NAMES: tuple[str, ...] = ("H", "a_3", "a_4", "a_5", "r_I", "r_R", "w")
 OBJECTIVE_COMPONENT_NAMES: tuple[str, ...] = (
@@ -168,7 +174,7 @@ class ReportingBundle:
         for name, frame in self.tables.items():
             target = destination / f"{name}.csv"
             temporary = target.with_suffix(target.suffix + ".tmp")
-            frame.to_csv(temporary, index=False)
+            presentation_table(frame).to_csv(temporary, index=False)
             temporary.replace(target)
             written[name] = target
         manifest = {
@@ -178,12 +184,16 @@ class ReportingBundle:
                 name: int(len(frame)) for name, frame in self.tables.items()
             },
             "warnings": list(self.warnings),
+            "presentation": vocabulary(),
         }
         target = destination / "report_manifest.json"
         temporary = target.with_suffix(target.suffix + ".tmp")
         temporary.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         temporary.replace(target)
         written["manifest"] = target
+        guide = destination / "README.md"
+        atomic_bytes(guide, TABLE_GUIDE.encode("utf-8"))
+        written["guide"] = guide
         return written
 
 
@@ -2602,7 +2612,7 @@ def _timing_tables(
                 "route": route,
                 "metric": "Optimization time",
                 "unit": "s",
-                "source_scope": "robustness_01 through robustness_10",
+                "source_scope": "S1–S10",
                 **_finite_summary(
                     pd.to_numeric(group["time_seconds"], errors="coerce").tolist()
                 ),
@@ -2806,6 +2816,7 @@ def build_reporting_tables(
         "physical_violation_summary": _physical_summary(physical_detail),
         "scope_specific_nonlinear_audit": nonlinear_audit,
     }
+    tables = {name: presentation_table(frame) for name, frame in tables.items()}
     return ReportingBundle(run, cases, tables, tuple(dict.fromkeys(warnings)))
 
 

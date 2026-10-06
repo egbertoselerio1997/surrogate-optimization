@@ -67,6 +67,7 @@ def finalize_reporting(
     figures = []
     expected_paths = [run / "report/tables" / f"{name}.csv" for name in bundle.tables]
     expected_paths.append(run / "report/tables/report_manifest.json")
+    expected_paths.append(run / "report/tables/README.md")
     output = run / "report/figures"
     package.generate_figures(run, output)
     for stem in comparison.FIGURES:

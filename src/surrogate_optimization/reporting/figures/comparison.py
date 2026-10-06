@@ -9,6 +9,14 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import ScalarFormatter
+from surrogate_optimization.reporting.labels import (
+    ROUTE_LABELS,
+    LOCATION_LABELS as LOCATION_NAMES,
+    CONTROL_LABELS,
+    scenario_label,
+    presentation_table,
+    chart_metric_label,
+)
 from surrogate_optimization.reporting.figures.common import export_figure
 from surrogate_optimization.reporting.figures.data import (
     CASES,
@@ -23,7 +31,7 @@ RAW = "#D97904"
 REFERENCE = "#343A40"
 GRID = "#D8DEE4"
 DIRECT = MECHANISTIC
-ROUTE_LABEL = {"surrogate": "Extended ICSOR", "mechanistic": "Smooth NLP"}
+ROUTE_LABEL = ROUTE_LABELS
 ROUTE_COLOR = {"surrogate": EXTENDED, "mechanistic": MECHANISTIC}
 ROUTE_MARKER = {"surrogate": "o", "mechanistic": "s"}
 LOCATIONS = (
@@ -36,7 +44,7 @@ LOCATIONS = (
     "overflow",
     "underflow",
 )
-LOCATION_LABELS = ("Mixer", "R1", "R2", "R3", "R4", "R5", "Overflow", "Underflow")
+LOCATION_LABELS = tuple(LOCATION_NAMES[location] for location in LOCATIONS)
 FIGURE_INDEX = (
     (1, "Q1/Q2/Q3", "Holdout accuracy overview", "q01_holdout_accuracy_overview"),
     (2, "Q4", "Holdout accuracy by location", "q02_holdout_accuracy_by_location"),
@@ -609,20 +617,10 @@ def _plot_operating_values(data, output, summary):
     exact = data.exact
     controls = data.controls
     display_cases = CASES
-    case_labels = {
-        case: "N" if index == 0 else f"S{index}" for index, case in enumerate(CASES)
-    }
+    case_labels = {case: scenario_label(case) for case in CASES}
     x = np.arange(11)
     control_columns = ("H", "a_3", "a_4", "a_5", "r_I", "r_R", "w")
-    control_titles = (
-        "HRT (h)",
-        "Aeration a3",
-        "Aeration a4",
-        "Aeration a5",
-        "Internal recycle rI",
-        "Return sludge rR",
-        "Waste fraction w",
-    )
+    control_titles = tuple(CONTROL_LABELS[name] for name in control_columns)
     fig = plt.figure(figsize=(20, 12))
     grid = fig.add_gridspec(3, 4, hspace=0.38, wspace=0.32)
     effluent_axes = [fig.add_subplot(grid[0, column]) for column in range(4)]
@@ -696,9 +694,7 @@ def _plot_objectives(data, output, summary):
     weights = data.weights
     display_cases = CASES
     robust_cases = CASES[1:]
-    case_labels = {
-        case: "N" if index == 0 else f"S{index}" for index, case in enumerate(CASES)
-    }
+    case_labels = {case: scenario_label(case) for case in CASES}
     x = np.arange(11)
     width = 0.37
     eligible = np.ones(10, dtype=bool)
@@ -834,9 +830,7 @@ def _plot_optimization_time(data, output, summary):
     timing = data.timing
     robustness_timing = timing.reindex(CASES[1:])
     display_cases = CASES
-    case_labels = {
-        case: "N" if index == 0 else f"S{index}" for index, case in enumerate(CASES)
-    }
+    case_labels = {case: scenario_label(case) for case in CASES}
     x = np.arange(11)
     width = 0.37
     fig, axis = plt.subplots(figsize=(12, 5.7))
@@ -929,7 +923,7 @@ def _plot_profiles(data, output, summary):
             color=colors[case],
             lw=2.2 if case == "nominal" else 1.5,
             marker="o",
-            label="N" if index == 0 else f"S{index}",
+            label=scenario_label(case),
         )
         for index, case in enumerate(CASES)
     ]
@@ -983,9 +977,7 @@ def render_figures(data: ChartData, output: Path):
     _plot_accuracy(data, output, summary)
     _plot_heatmaps(data, output, summary)
     _plot_parity(data, output, summary)
-    labels = {
-        case: ("N" if index == 0 else f"S{index}") for index, case in enumerate(CASES)
-    }
+    labels = {case: scenario_label(case) for case in CASES}
     _plot_effluent_parity(
         data.quality,
         data.influent,
@@ -1022,4 +1014,8 @@ def render_figures(data: ChartData, output: Path):
     _plot_profiles(data, output, summary)
     _plot_objectives(data, output, summary)
     _plot_optimization_time(data, output, summary)
-    return overall.reset_index(), pd.DataFrame(summary)
+    metrics = presentation_table(overall.reset_index())
+    metrics["r2_label"] = "Mean location R²"
+    summary_frame = pd.DataFrame(summary)
+    summary_frame["metric_label"] = summary_frame["metric"].map(chart_metric_label)
+    return metrics, summary_frame
