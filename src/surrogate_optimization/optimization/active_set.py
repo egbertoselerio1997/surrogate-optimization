@@ -1,42 +1,28 @@
-"""Exact-QP active-set refinement for the manuscript-v3 surrogate route.
-
-The gap-continuation problem in :mod:`closed_loop.v3_surrogate_nlp` is useful
-for reaching the neighbourhood of a lower-QP solution, but it is deliberately
-not the reportable outer problem.  This module implements that outer problem
-in the seven normalized control coordinates.  Every distinct trial control
-is evaluated by a newly initialized OSQP projection, and all derivatives are
-total derivatives through the active lower-QP KKT system.
-
-No finite-difference derivative fallback is provided.  A rank-deficient or
-ill-conditioned lower active set, a weakly active lower inequality, or an
-active-set change under the declared perturbation raises
-``ActiveSetDerivativeError``.  This is intentional: such an endpoint may be a
-validated feasible incumbent, but the manuscript does not permit it to be
-called first-order stationary.
-"""
+"""Optimization active_set."""
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from dataclasses import asdict, dataclass, replace
+if TYPE_CHECKING:
+    import numpy as np
+    from surrogate_optimization.surrogate.projection import ProjectionResult
+    from surrogate_optimization.optimization.types import SurrogateCase
+    from surrogate_optimization.optimization.types import SurrogateNLP
+    from surrogate_optimization.optimization.types import SurrogateNLPAssets
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import replace
+from scipy import linalg
+from scipy import sparse
+from scipy.optimize import lsq_linear
+from scipy.optimize import minimize
 from time import perf_counter
-from typing import Any, Sequence
-
+from typing import Any
+from typing import Sequence
 import casadi as ca
 import numpy as np
 import numpy.typing as npt
 import osqp
-from scipy import linalg, sparse
-from scipy.optimize import lsq_linear, minimize
-
-from .projection import ProjectionResult
-from .v3_surrogate_nlp import (
-    SurrogateCase,
-    SurrogateNLP,
-    SurrogateNLPAssets,
-    build_surrogate_nlp,
-    cold_reproject,
-)
-
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -50,9 +36,11 @@ class ExactQPProjectionError(ActiveSetRefinementError):
 
 
 class ActiveSetDerivativeError(ActiveSetRefinementError):
-    """Raised when the manuscript's active-set derivative gate is not met."""
+    """Raised when the model's active-set derivative gate is not met."""
 
-    def __init__(self, message: str, audit: "LowerActiveSetAudit | None" = None) -> None:
+    def __init__(
+        self, message: str, audit: "LowerActiveSetAudit | None" = None
+    ) -> None:
         super().__init__(message)
         self.audit = audit
 
@@ -70,23 +58,23 @@ def _maximum_positive(value: npt.ArrayLike) -> float:
 
 
 def _safe_name(value: str) -> str:
-    result = "".join(character if character.isalnum() else "_" for character in value)
-    return result or "v3_active_set"
+    result = "".join((character if character.isalnum() else "_" for character in value))
+    return result or "active_set"
 
 
 @dataclass(frozen=True)
 class ActiveSetRefinementSettings:
     """Frozen tolerances from the supplementary active-set protocol."""
 
-    active_tolerance: float = 1.0e-7
-    multiplier_tolerance: float = 1.0e-8
-    perturbation: float = 1.0e-6
-    condition_epsilon_limit: float = 1.0e-8
-    sensitivity_residual_tolerance: float = 1.0e-8
-    state_reproduction_tolerance: float = 1.0e-8
-    upper_acceptance_tolerance: float = 1.0e-6
+    active_tolerance: float = 1e-07
+    multiplier_tolerance: float = 1e-08
+    perturbation: float = 1e-06
+    condition_epsilon_limit: float = 1e-08
+    sensitivity_residual_tolerance: float = 1e-08
+    state_reproduction_tolerance: float = 1e-08
+    upper_acceptance_tolerance: float = 1e-06
     maximum_iterations: int = 250
-    function_tolerance: float = 1.0e-10
+    function_tolerance: float = 1e-10
 
     def __post_init__(self) -> None:
         positive = (
@@ -99,10 +87,12 @@ class ActiveSetRefinementSettings:
             self.upper_acceptance_tolerance,
             self.function_tolerance,
         )
-        if not all(np.isfinite(item) and item > 0.0 for item in positive):
+        if not all((np.isfinite(item) and item > 0.0 for item in positive)):
             raise ValueError("active-set tolerances must be finite and positive.")
         if self.perturbation >= 0.5:
-            raise ValueError("the normalized active-set perturbation must be below 0.5.")
+            raise ValueError(
+                "the normalized active-set perturbation must be below 0.5."
+            )
         if self.maximum_iterations < 1:
             raise ValueError("maximum_iterations must be positive.")
 
@@ -161,9 +151,7 @@ class ExactQPSensitivity:
         return {
             "displacement_wrt_normalized": self.displacement_wrt_normalized.tolist(),
             "state_wrt_normalized": self.state_wrt_normalized.tolist(),
-            "active_multiplier_wrt_normalized": (
-                self.active_multiplier_wrt_normalized.tolist()
-            ),
+            "active_multiplier_wrt_normalized": self.active_multiplier_wrt_normalized.tolist(),
             "displacement_wrt_physical": self.displacement_wrt_physical.tolist(),
             "state_wrt_physical": self.state_wrt_physical.tolist(),
             "solve_residual": self.solve_residual,
@@ -195,7 +183,7 @@ class ExactQPTrial:
     def feasible(self) -> bool:
         return bool(
             self.projection.accepted
-            and _maximum_positive(self.upper_constraints) <= 1.0e-6
+            and _maximum_positive(self.upper_constraints) <= 1e-06
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -209,12 +197,8 @@ class ExactQPTrial:
             "objective_gradient_physical": self.objective_gradient_physical.tolist(),
             "upper_constraint_names": list(self.upper_constraint_names),
             "upper_constraints": self.upper_constraints.tolist(),
-            "upper_constraint_jacobian_normalized": (
-                self.upper_constraint_jacobian_normalized.tolist()
-            ),
-            "upper_constraint_jacobian_physical": (
-                self.upper_constraint_jacobian_physical.tolist()
-            ),
+            "upper_constraint_jacobian_normalized": self.upper_constraint_jacobian_normalized.tolist(),
+            "upper_constraint_jacobian_physical": self.upper_constraint_jacobian_physical.tolist(),
             "engineering_rows": self.engineering_rows.tolist(),
             "trust_rows": self.trust_rows.tolist(),
             "projection": {
@@ -273,12 +257,14 @@ class ExactQPRefinementResult:
         return bool(
             self.upper_kkt is not None
             and self.upper_kkt.feasible
-            and self.state_reproduction_passed is True
+            and (self.state_reproduction_passed is True)
         )
 
     @property
     def stationary(self) -> bool:
-        return bool(self.feasible and self.upper_kkt is not None and self.upper_kkt.stationary)
+        return bool(
+            self.feasible and self.upper_kkt is not None and self.upper_kkt.stationary
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -294,9 +280,9 @@ class ExactQPRefinementResult:
             "elapsed_seconds": self.elapsed_seconds,
             "status": self.status,
             "derivative_error": self.derivative_error,
-            "derivative_audit": (
-                None if self.derivative_audit is None else self.derivative_audit.as_dict()
-            ),
+            "derivative_audit": None
+            if self.derivative_audit is None
+            else self.derivative_audit.as_dict(),
             "state_reproduction_residual": self.state_reproduction_residual,
             "state_reproduction_passed": self.state_reproduction_passed,
         }
@@ -326,19 +312,22 @@ class ExactQPActiveSetRefiner:
         *,
         problem: SurrogateNLP | None = None,
         settings: ActiveSetRefinementSettings | None = None,
-        name: str = "v3_active_set",
+        name: str = "active_set",
     ) -> None:
+        from surrogate_optimization.optimization.surrogate import (
+            build_surrogate_expression_graph,
+        )
+
         self.assets = assets
         self.case = case
         self.settings = settings or ActiveSetRefinementSettings()
-        self.problem = problem or build_surrogate_nlp(
-            assets,
-            1.0e-8,
-            name=f"{name}_expressions",
-            compile_solver=False,
+        self.problem = problem or build_surrogate_expression_graph(
+            assets, 1e-08, name=f"{name}_expressions"
         )
         if self.problem.assets is not assets:
-            raise ValueError("the supplied surrogate problem must use the supplied assets object.")
+            raise ValueError(
+                "the supplied surrogate problem must use the supplied assets object."
+            )
         self.parameter = case.parameter_vector(assets)
         self._cache: dict[bytes, ExactQPTrial] = {}
         self._cold_qp_resolutions = 0
@@ -366,22 +355,15 @@ class ExactQPActiveSetRefiner:
         equality_scale = ca.DM(self.assets.row_scales.equality)
         inequality_scale = ca.DM(self.assets.row_scales.inequality)
         equality = (
-            ca.diag(1.0 / equality_scale)
-            @ physical_equality
-            @ ca.diag(state_scale)
+            ca.diag(1.0 / equality_scale) @ physical_equality @ ca.diag(state_scale)
         )
-        equality_rhs = (
-            physical_rhs - physical_equality @ raw
-        ) / equality_scale
+        equality_rhs = (physical_rhs - physical_equality @ raw) / equality_scale
         scaled_network = (
-            ca.diag(1.0 / inequality_scale)
-            @ physical_inequality
-            @ ca.diag(state_scale)
+            ca.diag(1.0 / inequality_scale) @ physical_inequality @ ca.diag(state_scale)
         )
         inequality = ca.vertcat(-ca.DM.eye(n_state), scaled_network)
         inequality_rhs = ca.vertcat(
-            raw / state_scale,
-            -(physical_inequality @ raw) / inequality_scale,
+            raw / state_scale, -(physical_inequality @ raw) / inequality_scale
         )
         self._lower_function = ca.Function(
             f"{name}_lower",
@@ -404,27 +386,34 @@ class ExactQPActiveSetRefiner:
         self._upper_function = ca.Function(
             f"{name}_upper",
             [normalized, parameter, state],
-            [upper_vector, ca.jacobian(upper_vector, normalized), ca.jacobian(upper_vector, state)],
+            [
+                upper_vector,
+                ca.jacobian(upper_vector, normalized),
+                ca.jacobian(upper_vector, state),
+            ],
         )
         if int(equality.numel()) != n_equality * n_state:
-            raise AssertionError("lower equality serialization has an inconsistent size.")
+            raise AssertionError(
+                "lower equality serialization has an inconsistent size."
+            )
         if int(inequality.numel()) != n_inequality * n_state:
-            raise AssertionError("lower inequality serialization has an inconsistent size.")
+            raise AssertionError(
+                "lower inequality serialization has an inconsistent size."
+            )
 
     def _normalized(self, value: npt.ArrayLike) -> FloatArray:
         normalized = _vector(value, 7, "normalized_controls")
-        tolerance = 1.0e-12
+        tolerance = 1e-12
         if np.any(normalized < -tolerance) or np.any(normalized > 1.0 + tolerance):
             raise ValueError("normalized_controls must lie in [0, 1].")
         return np.clip(normalized, 0.0, 1.0)
 
     def _cold_project(self, normalized: FloatArray) -> ProjectionResult:
+        from surrogate_optimization.optimization.surrogate import cold_reproject
+
         self._cold_qp_resolutions += 1
         return cold_reproject(
-            self.assets,
-            self.case,
-            normalized,
-            raise_on_failure=False,
+            self.assets, self.case, normalized, raise_on_failure=False
         )
 
     def _lower_matrices(self, normalized: FloatArray) -> _LowerMatrices:
@@ -442,7 +431,9 @@ class ExactQPActiveSetRefiner:
             inequality=np.asarray(values[3], dtype=np.float64).reshape(
                 n_inequality, n_state
             ),
-            inequality_rhs=np.asarray(values[4], dtype=np.float64).reshape(n_inequality),
+            inequality_rhs=np.asarray(values[4], dtype=np.float64).reshape(
+                n_inequality
+            ),
             raw_derivative=np.asarray(derivatives[0], dtype=np.float64).reshape(
                 n_state, 7
             ),
@@ -452,15 +443,17 @@ class ExactQPActiveSetRefiner:
             equality_rhs_derivative=np.asarray(
                 derivatives[2], dtype=np.float64
             ).reshape(n_equality, 7),
-            inequality_derivative=np.asarray(
-                derivatives[3], dtype=np.float64
-            ).reshape(n_inequality, n_state, 7, order="F"),
+            inequality_derivative=np.asarray(derivatives[3], dtype=np.float64).reshape(
+                n_inequality, n_state, 7, order="F"
+            ),
             inequality_rhs_derivative=np.asarray(
                 derivatives[4], dtype=np.float64
             ).reshape(n_inequality, 7),
         )
 
-    def _perturbation_directions(self, normalized: FloatArray) -> Sequence[tuple[int, int]]:
+    def _perturbation_directions(
+        self, normalized: FloatArray
+    ) -> Sequence[tuple[int, int]]:
         delta = self.settings.perturbation
         result: list[tuple[int, int]] = []
         for coordinate in range(7):
@@ -490,7 +483,6 @@ class ExactQPActiveSetRefiner:
         required_rank = int(block.shape[0])
         rank_passed = numerical_rank == required_rank
         smallest = float(singular[-1]) if singular.size else np.inf
-
         n_state = self.assets.layout.state_size
         kkt = np.block(
             [
@@ -510,9 +502,7 @@ class ExactQPActiveSetRefiner:
             and condition_epsilon <= settings.condition_epsilon_limit
         )
         active_multiplier = projection.inequality_multipliers[active]
-        minimum_multiplier = (
-            float(np.min(active_multiplier)) if active.size else None
-        )
+        minimum_multiplier = float(np.min(active_multiplier)) if active.size else None
         strict_passed = bool(
             active.size == 0
             or np.all(active_multiplier > settings.multiplier_tolerance)
@@ -521,15 +511,10 @@ class ExactQPActiveSetRefiner:
             (projection.equality_multipliers, active_multiplier)
         )
         right_hand_side = np.concatenate(
-            (
-                np.zeros(n_state),
-                matrices.equality_rhs,
-                matrices.inequality_rhs[active],
-            )
+            (np.zeros(n_state), matrices.equality_rhs, matrices.inequality_rhs[active])
         )
         vector = np.concatenate((projection.displacement, multipliers))
         kkt_residual = float(np.linalg.norm(kkt @ vector - right_hand_side, ord=np.inf))
-
         perturbations: list[ActiveSetPerturbation] = []
         perturbation_passed = True
         if rank_passed and conditioning_passed and strict_passed:
@@ -537,9 +522,11 @@ class ExactQPActiveSetRefiner:
                 perturbed = normalized.copy()
                 perturbed[coordinate] += direction * settings.perturbation
                 result = self._cold_project(perturbed)
-                perturbed_active = np.flatnonzero(
-                    result.inequality_slack <= settings.active_tolerance
-                ) if result.accepted else np.asarray([], dtype=int)
+                perturbed_active = (
+                    np.flatnonzero(result.inequality_slack <= settings.active_tolerance)
+                    if result.accepted
+                    else np.asarray([], dtype=int)
+                )
                 preserved = bool(
                     result.accepted and np.array_equal(perturbed_active, active)
                 )
@@ -564,7 +551,7 @@ class ExactQPActiveSetRefiner:
                         coordinate=coordinate,
                         direction=direction,
                         accepted_projection=bool(result.accepted),
-                        active_indices=tuple(int(item) for item in perturbed_active),
+                        active_indices=tuple((int(item) for item in perturbed_active)),
                         active_set_preserved=preserved,
                         multiplier_signs_preserved=signs,
                         minimum_active_multiplier=perturbed_minimum,
@@ -573,7 +560,6 @@ class ExactQPActiveSetRefiner:
                 perturbation_passed = perturbation_passed and preserved and signs
         else:
             perturbation_passed = False
-
         stable = bool(
             rank_passed
             and conditioning_passed
@@ -591,7 +577,7 @@ class ExactQPActiveSetRefiner:
             reasons.append("the 1e-6 domain-aware perturbation test failed")
         reason = "active-set sensitivity gates passed" if stable else "; ".join(reasons)
         audit = LowerActiveSetAudit(
-            active_indices=tuple(int(item) for item in active),
+            active_indices=tuple((int(item) for item in active)),
             active_count=int(active.size),
             active_row_rank=numerical_rank,
             required_active_row_rank=required_rank,
@@ -609,7 +595,7 @@ class ExactQPActiveSetRefiner:
             stable=stable,
             reason=reason,
         )
-        return audit, block, kkt, multipliers
+        return (audit, block, kkt, multipliers)
 
     def _sensitivity(
         self,
@@ -645,10 +631,7 @@ class ExactQPActiveSetRefiner:
             )
         try:
             derivative = linalg.solve(
-                kkt,
-                right_hand_sides,
-                assume_a="sym",
-                check_finite=True,
+                kkt, right_hand_sides, assume_a="sym", check_finite=True
             )
         except linalg.LinAlgError as exc:
             raise ActiveSetDerivativeError(
@@ -658,7 +641,10 @@ class ExactQPActiveSetRefiner:
             np.linalg.norm(kkt @ derivative - right_hand_sides, ord=np.inf)
             / max(1.0, float(np.linalg.norm(right_hand_sides, ord=np.inf)))
         )
-        if not np.all(np.isfinite(derivative)) or residual > self.settings.sensitivity_residual_tolerance:
+        if (
+            not np.all(np.isfinite(derivative))
+            or residual > self.settings.sensitivity_residual_tolerance
+        ):
             raise ActiveSetDerivativeError(
                 "the lower KKT sensitivity solve failed its residual audit", audit
             )
@@ -691,7 +677,6 @@ class ExactQPActiveSetRefiner:
         cold-solved.  ``force_cold`` bypasses that cache for the independent
         final replay.
         """
-
         normalized = self._normalized(normalized_controls)
         key = normalized.tobytes()
         if not force_cold and key in self._cache:
@@ -700,8 +685,7 @@ class ExactQPActiveSetRefiner:
         projection = self._cold_project(normalized)
         if not projection.accepted:
             raise ExactQPProjectionError(
-                "cold projection failed its independent lower-QP KKT audit: "
-                f"{projection.diagnostics.as_dict()}"
+                f"cold projection failed its independent lower-QP KKT audit: {projection.diagnostics.as_dict()}"
             )
         matrices = self._lower_matrices(normalized)
         audit, block, kkt, multipliers = self._audit_active_set(
@@ -714,9 +698,7 @@ class ExactQPActiveSetRefiner:
             normalized, self.parameter, projection.state
         )
         upper_value = np.asarray(upper, dtype=np.float64).reshape(-1)
-        partial_normalized_array = np.asarray(
-            partial_normalized, dtype=np.float64
-        )
+        partial_normalized_array = np.asarray(partial_normalized, dtype=np.float64)
         partial_state_array = np.asarray(partial_state, dtype=np.float64)
         total = (
             partial_normalized_array
@@ -742,9 +724,8 @@ class ExactQPActiveSetRefiner:
         inverse_span = 1.0 / self.assets.theta_span
         result = ExactQPTrial(
             normalized_controls=normalized,
-            physical_controls=(
-                self.assets.theta_lower + self.assets.theta_span * normalized
-            ),
+            physical_controls=self.assets.theta_lower
+            + self.assets.theta_span * normalized,
             raw_state=matrices.raw,
             projected_state=projection.state.copy(),
             objective=float(upper_value[0]),
@@ -753,9 +734,7 @@ class ExactQPActiveSetRefiner:
             upper_constraint_names=tuple(upper_names),
             upper_constraints=upper_constraints,
             upper_constraint_jacobian_normalized=upper_jacobian,
-            upper_constraint_jacobian_physical=(
-                upper_jacobian * inverse_span[None, :]
-            ),
+            upper_constraint_jacobian_physical=upper_jacobian * inverse_span[None, :],
             engineering_rows=engineering.copy(),
             trust_rows=trust.copy(),
             projection=projection,
@@ -769,9 +748,7 @@ class ExactQPActiveSetRefiner:
         return result
 
     def _minimum_norm_nonnegative_multipliers(
-        self,
-        matrix: FloatArray,
-        rhs: FloatArray,
+        self, matrix: FloatArray, rhs: FloatArray
     ) -> FloatArray:
         if matrix.shape[1] == 0:
             return np.empty(0, dtype=np.float64)
@@ -780,9 +757,9 @@ class ExactQPActiveSetRefiner:
             rhs,
             bounds=(np.zeros(matrix.shape[1]), np.full(matrix.shape[1], np.inf)),
             method="trf",
-            tol=1.0e-12,
+            tol=1e-12,
             lsq_solver="exact",
-            max_iter=10_000,
+            max_iter=10000,
         )
         if not fit.success or not np.all(np.isfinite(fit.x)):
             raise ActiveSetRefinementError(
@@ -798,10 +775,7 @@ class ExactQPActiveSetRefiner:
         rank = int(np.count_nonzero(singular > tolerance))
         if rank < matrix.shape[1]:
             _, _, right_vectors = linalg.svd(
-                matrix,
-                full_matrices=False,
-                check_finite=True,
-                lapack_driver="gesdd",
+                matrix, full_matrices=False, check_finite=True, lapack_driver="gesdd"
             )
             row_basis = right_vectors[:rank]
             row_rhs = row_basis @ multipliers
@@ -810,9 +784,7 @@ class ExactQPActiveSetRefiner:
                 (sparse.csc_matrix(row_basis), selector), format="csc"
             )
             lower = np.concatenate((row_rhs, np.zeros(matrix.shape[1])))
-            upper = np.concatenate(
-                (row_rhs, np.full(matrix.shape[1], np.inf))
-            )
+            upper = np.concatenate((row_rhs, np.full(matrix.shape[1], np.inf)))
             solver = osqp.OSQP()
             solver.setup(
                 P=sparse.eye(matrix.shape[1], format="csc"),
@@ -820,25 +792,24 @@ class ExactQPActiveSetRefiner:
                 A=constraint,
                 l=lower,
                 u=upper,
-                eps_abs=1.0e-12,
-                eps_rel=1.0e-12,
-                max_iter=100_000,
+                eps_abs=1e-12,
+                eps_rel=1e-12,
+                max_iter=100000,
                 polishing=True,
                 verbose=False,
             )
             solved = solver.solve(raise_error=False)
             candidate = np.asarray(
-                solved.x
-                if solved.x is not None
-                else np.full(matrix.shape[1], np.nan),
+                solved.x if solved.x is not None else np.full(matrix.shape[1], np.nan),
                 dtype=np.float64,
             )
             reference = matrix @ multipliers
             error = float(np.linalg.norm(matrix @ candidate - reference, ord=np.inf))
             if (
                 not np.all(np.isfinite(candidate))
-                or np.min(candidate) < -1.0e-9
-                or error > 1.0e-9 * max(1.0, float(np.linalg.norm(reference, ord=np.inf)))
+                or np.min(candidate) < -1e-09
+                or error
+                > 1e-09 * max(1.0, float(np.linalg.norm(reference, ord=np.inf)))
             ):
                 raise ActiveSetRefinementError(
                     "minimum-norm upper multiplier reconstruction failed its audit."
@@ -848,60 +819,56 @@ class ExactQPActiveSetRefiner:
 
     def audit_upper_kkt(self, trial: ExactQPTrial) -> UpperKKTAudit:
         """Independently reconstruct upper multipliers and first-order residuals."""
-
         active = np.flatnonzero(
             trial.upper_constraints >= -self.settings.active_tolerance
         )
         active_jacobian = trial.upper_constraint_jacobian_normalized[active]
         multipliers = self._minimum_norm_nonnegative_multipliers(
-            active_jacobian.T,
-            -trial.objective_gradient_normalized,
+            active_jacobian.T, -trial.objective_gradient_normalized
         )
         lagrangian_gradient = (
-            trial.objective_gradient_normalized
-            + active_jacobian.T @ multipliers
+            trial.objective_gradient_normalized + active_jacobian.T @ multipliers
         )
         primal = _maximum_positive(trial.upper_constraints)
         dual = _maximum_positive(-multipliers)
         stationarity = float(np.linalg.norm(lagrangian_gradient, ord=np.inf))
-        complementarity = float(
-            np.linalg.norm(
-                multipliers * trial.upper_constraints[active], ord=np.inf
+        complementarity = (
+            float(
+                np.linalg.norm(
+                    multipliers * trial.upper_constraints[active], ord=np.inf
+                )
             )
-        ) if active.size else 0.0
+            if active.size
+            else 0.0
+        )
         tolerance = self.settings.upper_acceptance_tolerance
         feasible = bool(trial.projection.accepted and primal <= tolerance)
         stationary = bool(
             feasible
             and trial.lower_active_set.stable
-            and dual <= tolerance
-            and stationarity <= tolerance
-            and complementarity <= tolerance
+            and (dual <= tolerance)
+            and (stationarity <= tolerance)
+            and (complementarity <= tolerance)
         )
         classification = (
             "first_order_kkt_stationary_feasible"
             if stationary
-            else (
-                "validated_feasible_stationarity_unresolved"
-                if feasible
-                else "final_feasibility_failed"
-            )
+            else "validated_feasible_stationarity_unresolved"
+            if feasible
+            else "final_feasibility_failed"
         )
         reason = (
             "independent lower and upper KKT audits passed"
             if stationary
-            else (
-                "the independently projected point is feasible but its upper KKT "
-                "residuals do not meet 1e-6"
-                if feasible
-                else "the independently projected point violates an upper feasibility gate"
-            )
+            else "the independently projected point is feasible but its upper KKT residuals do not meet 1e-6"
+            if feasible
+            else "the independently projected point violates an upper feasibility gate"
         )
         full_multipliers = np.zeros(trial.upper_constraints.size, dtype=np.float64)
         full_multipliers[active] = multipliers
         return UpperKKTAudit(
-            active_indices=tuple(int(item) for item in active),
-            active_names=tuple(trial.upper_constraint_names[item] for item in active),
+            active_indices=tuple((int(item) for item in active)),
+            active_names=tuple((trial.upper_constraint_names[item] for item in active)),
             multipliers=full_multipliers,
             primal_residual=primal,
             dual_feasibility_residual=dual,
@@ -915,7 +882,6 @@ class ExactQPActiveSetRefiner:
 
     def refine(self, normalized_start: npt.ArrayLike) -> ExactQPRefinementResult:
         """Run analytical-gradient SLSQP and independently replay its endpoint."""
-
         started = perf_counter()
         initial_controls = self._normalized(normalized_start)
         initial: ExactQPTrial | None = None
@@ -961,7 +927,6 @@ class ExactQPActiveSetRefiner:
                 status="exact_qp_failed",
                 derivative_error=str(exc),
             )
-
         upper_without_bounds = len(self.problem.engineering_names) + len(
             self.problem.trust_names
         )
@@ -1009,9 +974,6 @@ class ExactQPActiveSetRefiner:
             solver_status = f"active_set_derivative_unavailable: {exc}"
         except ActiveSetRefinementError as exc:
             solver_status = f"exact_qp_evaluation_failed: {exc}"
-
-        # Ensure a normally returned optimizer endpoint is represented in the
-        # exact-QP cache even if SLSQP did not request its value last.
         try:
             self.evaluate(proposed)
         except ActiveSetDerivativeError as exc:
@@ -1019,7 +981,6 @@ class ExactQPActiveSetRefiner:
             derivative_audit = exc.audit
         except ActiveSetRefinementError as exc:
             solver_status = f"exact_qp_endpoint_evaluation_failed: {exc}"
-
         candidates = list(self._cache.values())
         feasible = [
             item
@@ -1034,23 +995,18 @@ class ExactQPActiveSetRefiner:
                     self.audit_upper_kkt(item)
                 )
             except ActiveSetRefinementError as exc:
-                # A failed multiplier reconstruction cannot be treated as a
-                # stationary candidate, but the physical point remains a
-                # feasible local incumbent.
                 derivative_error = str(exc)
         stationary_candidates = [
             item
             for item in feasible
-            if (
-                item.normalized_controls.tobytes() in candidate_audits
-                and candidate_audits[item.normalized_controls.tobytes()].stationary
-            )
+            if item.normalized_controls.tobytes() in candidate_audits
+            and candidate_audits[item.normalized_controls.tobytes()].stationary
         ]
         pool = stationary_candidates or feasible
         selected_cached: ExactQPTrial | None = None
         if pool:
-            best_objective = min(item.objective for item in pool)
-            tie = 1.0e-10 * max(1.0, abs(best_objective))
+            best_objective = min((item.objective for item in pool))
+            tie = 1e-10 * max(1.0, abs(best_objective))
             selected_cached = min(
                 (item for item in pool if item.objective <= best_objective + tie),
                 key=lambda item: tuple(item.normalized_controls.tolist()),
@@ -1058,14 +1014,11 @@ class ExactQPActiveSetRefiner:
             proposed = selected_cached.normalized_controls
         elif proposed.tobytes() in self._cache:
             selected_cached = self._cache[proposed.tobytes()]
-
         reproduction_residual: float | None = None
         reproduction_passed: bool | None = None
         try:
             final = self.evaluate(
-                proposed,
-                force_cold=True,
-                independent_final_replay=True,
+                proposed, force_cold=True, independent_final_replay=True
             )
             upper_kkt = self.audit_upper_kkt(final)
             if selected_cached is None:
@@ -1073,10 +1026,7 @@ class ExactQPActiveSetRefiner:
             else:
                 reproduction_residual = float(
                     np.linalg.norm(
-                        (
-                            final.projected_state
-                            - selected_cached.projected_state
-                        )
+                        (final.projected_state - selected_cached.projected_state)
                         / self.assets.model.response_scale,
                         ord=np.inf,
                     )
@@ -1092,10 +1042,7 @@ class ExactQPActiveSetRefiner:
                     feasible=False,
                     stationary=False,
                     classification="projection_reproduction_failed",
-                    reason=(
-                        "the independent final cold QP did not reproduce the "
-                        "cached exact-QP state within the scaled 1e-8 tolerance"
-                    ),
+                    reason="the independent final cold QP did not reproduce the cached exact-QP state within the scaled 1e-8 tolerance",
                 )
         except ActiveSetDerivativeError as exc:
             derivative_error = str(exc)
@@ -1103,17 +1050,16 @@ class ExactQPActiveSetRefiner:
             solver_status = f"final_active_set_derivative_unavailable: {exc}"
         except ActiveSetRefinementError as exc:
             solver_status = f"final_exact_qp_failed: {exc}"
-
         if (
             upper_kkt is not None
             and upper_kkt.stationary
-            and reproduction_passed is True
+            and (reproduction_passed is True)
         ):
             status = "validated_stationary"
         elif (
             upper_kkt is not None
             and upper_kkt.feasible
-            and reproduction_passed is True
+            and (reproduction_passed is True)
         ):
             status = "validated_feasible_stationarity_unresolved"
         elif reproduction_passed is False:
@@ -1148,16 +1094,11 @@ def evaluate_exact_qp_active_set(
     *,
     problem: SurrogateNLP | None = None,
     settings: ActiveSetRefinementSettings | None = None,
-    name: str = "v3_active_set_evaluation",
+    name: str = "active_set_evaluation",
 ) -> ExactQPTrial:
     """Convenience wrapper for one cold exact-QP value/gradient evaluation."""
-
     return ExactQPActiveSetRefiner(
-        assets,
-        case,
-        problem=problem,
-        settings=settings,
-        name=name,
+        assets, case, problem=problem, settings=settings, name=name
     ).evaluate(normalized_controls)
 
 
@@ -1168,31 +1109,9 @@ def refine_exact_qp_active_set(
     *,
     problem: SurrogateNLP | None = None,
     settings: ActiveSetRefinementSettings | None = None,
-    name: str = "v3_active_set_refinement",
+    name: str = "active_set_refinement",
 ) -> ExactQPRefinementResult:
     """Convenience wrapper for seven-variable exact-QP outer refinement."""
-
     return ExactQPActiveSetRefiner(
-        assets,
-        case,
-        problem=problem,
-        settings=settings,
-        name=name,
+        assets, case, problem=problem, settings=settings, name=name
     ).refine(normalized_start)
-
-
-__all__ = [
-    "ActiveSetDerivativeError",
-    "ActiveSetPerturbation",
-    "ActiveSetRefinementError",
-    "ActiveSetRefinementSettings",
-    "ExactQPActiveSetRefiner",
-    "ExactQPProjectionError",
-    "ExactQPRefinementResult",
-    "ExactQPSensitivity",
-    "ExactQPTrial",
-    "LowerActiveSetAudit",
-    "UpperKKTAudit",
-    "evaluate_exact_qp_active_set",
-    "refine_exact_qp_active_set",
-]

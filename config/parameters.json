@@ -1,34 +1,29 @@
 {
-  "schema_version": 5,
-  "sources": {
-    "manuscript": "article/wip_v3/manuscript.tex",
-    "supplement": "article/wip_v3/supplementary_material.tex"
-  },
+  "schema_version": 6,
   "execution": {
-    "default_profile": "article_full_10000",
-    "profile_environment_variable": "ARTICLE_V3_PROFILE",
-    "run_id_environment_variable": "ARTICLE_V3_RUN_ID",
-    "results_root": "results/article_v3",
+    "default_profile": "production",
+    "run_id_environment_variable": "SURROGATE_OPTIMIZATION_RUN_ID",
+    "results_root": "results",
     "resume_requires_exact_contract_hash": true,
     "numerical_threads_per_worker": 1
   },
   "profiles": {
-    "article_full_10000": {
-      "article_eligible": true,
-      "development_count": 8000,
-      "test_count": 2000,
+    "production": {
+      "scientifically_eligible": true,
+      "development_candidate_count": 8000,
+      "holdout_candidate_count": 2000,
       "robustness_count": 10,
       "clarifier_layer_count": 10,
       "clarifier_feed_layer_one_based": 5,
       "clarifier_layer_volume_m3": 600.0,
       "development_seed": 100042,
-      "test_seed": 100043,
+      "holdout_seed": 100043,
       "robustness_seed": 314159,
       "optimization_start_count": 1,
-      "continue_after_article_admission_gate_failure": true,
+      "continue_after_study_admission_gate_failure": true,
       "admission_gate_execution_policy": "record every failed scientific gate and continue without refitting",
-      "scientific_admission_gate_enforced_for_article_eligibility": true,
-      "article_results_eligible_only_if_all_scientific_gates_pass": true,
+      "scientific_admission_gate_enforced_for_study_eligibility": true,
+      "study_results_eligible_only_if_all_scientific_gates_pass": true,
       "counts_are_candidate_rows": true,
       "replace_rejected_mechanistic_candidates": false,
       "purpose": "Attempt exactly 10000 LHS candidates in independent 8000-row development and 2000-row descriptive holdout streams. Audit rejected mechanistic attempts and retain the accepted subsets without replacement."
@@ -40,34 +35,55 @@
     "initial_candidate_method": "strength-1 Latin hypercube",
     "final_accepted_design_description": "accepted rows are the numerically valid subset of each fixed Latin hypercube; rejected candidates are not replaced",
     "dimension_order": [
-      "H", "a_3", "a_4", "a_5", "r_I", "r_R", "w",
-      "S_O", "S_F", "S_A", "S_NH4", "S_NO2", "S_NO3", "S_N2", "S_PO4", "S_I", "S_ALK",
-      "X_I", "X_S", "X_H", "X_PAO", "X_PP", "X_PHA", "X_AOB", "X_NOB", "X_MeP", "X_MeOH"
+      "H",
+      "a_3",
+      "a_4",
+      "a_5",
+      "r_I",
+      "r_R",
+      "w",
+      "S_O",
+      "S_F",
+      "S_A",
+      "S_NH4",
+      "S_NO2",
+      "S_NO3",
+      "S_N2",
+      "S_PO4",
+      "S_I",
+      "S_ALK",
+      "X_I",
+      "X_S",
+      "X_H",
+      "X_PAO",
+      "X_PP",
+      "X_PHA",
+      "X_AOB",
+      "X_NOB",
+      "X_MeP",
+      "X_MeOH"
     ],
     "lhs_jitter_formula": "((U >> 11) + 0.5) / 2^53",
     "fisher_yates_traversal": "descending n-1 through 1",
-    "fold_seed": 271828,
-    "optimization_start_seed": 271828,
-    "optimization_start_seed_status": "retired legacy multistart seed; the production start is the deterministic componentwise box center"
+    "fold_seed": 271828
   },
   "mechanistic_generation": {
     "bdf_coordinates": "log",
-    "relative_tolerance": 1e-7,
-    "dimensionless_absolute_tolerance": 1e-9,
+    "relative_tolerance": 1e-07,
+    "dimensionless_absolute_tolerance": 1e-09,
     "minimum_horizon_d": 400.0,
     "waste_turnovers": 50.0,
     "maximum_step_fraction": 0.01,
     "polish_maximum_evaluations": 5000,
-    "polish_xtol": 1e-9,
-    "polish_ftol": 1e-9,
-    "polish_gtol": 1e-9,
-    "balance_tolerance": 1e-6,
+    "polish_xtol": 1e-09,
+    "polish_ftol": 1e-09,
+    "polish_gtol": 1e-09,
+    "balance_tolerance": 1e-06,
     "state_nonnegativity_tolerance": 1e-10,
     "rate_nonnegativity_tolerance": 1e-12,
-    "two_start_scaled_tolerance": 1e-6,
-    "stability_margin_d_inv": -1e-8,
-    "stability_step_agreement_d_inv": 1e-6,
-    "stability_step_agreement_note": "Revised from 1e-9 after the complete 500-row preflight showed that all 21 apparent failures passed every physical, convergence, branch, and stability-margin gate and differed only in the prescribed two-step finite-difference eigenvalue estimate (maximum observed discrepancy 9.281e-7 d^-1); see manuscript revision record.",
+    "two_start_scaled_tolerance": 1e-06,
+    "stability_margin_d_inv": -1e-08,
+    "stability_step_agreement_d_inv": 1e-06,
     "candidate_acceptance_branch_rule": "exact equality of the complete two-start nonsmooth branch-classification tuple; no development-calibrated branch-margin generation screen",
     "candidate_policy": {
       "target_counts_mean": "attempted LHS candidate rows",
@@ -81,7 +97,7 @@
     }
   },
   "surrogate": {
-    "response_schema": "clarifier_inventory_v1",
+    "response_schema": "clarifier_inventory",
     "mechanistic_target_dimension": 170,
     "response_dimension": 161,
     "response_order": "mixer[20], reactors_1_to_5[100], clarifier_overflow_flow[20], clarifier_underflow_flow[20], clarifier_solids_inventory[1]",
@@ -89,7 +105,19 @@
     "discarded_surrogate_coordinates": "ten Clarifier-layer TSS concentrations",
     "mechanistic_layers_retained": true,
     "fold_count": 5,
-    "ridge_grid": [1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0],
+    "ridge_grid": [
+      1e-08,
+      1e-07,
+      1e-06,
+      1e-05,
+      0.0001,
+      0.001,
+      0.01,
+      0.1,
+      1.0,
+      10.0,
+      100.0
+    ],
     "selection": "largest ridge within one descriptive standard error of minimum raw complete reduced-response nRMSE",
     "population_standard_deviation_ddof": 0,
     "variance_relative_floor": 1e-12,
@@ -106,11 +134,23 @@
       "reference_concentration_mg_L": 1.0,
       "inputs_and_basis": "the same seven controls, twenty influent components, and standardized complete second-order basis used by the Extended ICSOR response regression",
       "fold_count": 5,
-      "ridge_grid": [1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0],
+      "ridge_grid": [
+        1e-08,
+        1e-07,
+        1e-06,
+        1e-05,
+        0.0001,
+        0.001,
+        0.01,
+        0.1,
+        1.0,
+        10.0,
+        100.0
+      ],
       "selection": "largest ridge within one descriptive standard error of minimum out-of-fold log-scale RMSE",
       "reported_strata": {
         "low_tss_quantile": 0.25,
-        "upper_tail_quantile": 0.90
+        "upper_tail_quantile": 0.9
       },
       "projection_use": "enforce the predicted positive overflow TSS as one system-wide linear equality after multiplication by effluent flow",
       "fixed_feed_fraction_floor_used": false,
@@ -123,7 +163,7 @@
     "physical_inequality_count": 12,
     "inequality_count_including_nonnegativity": 173,
     "outlet_tss_coordinates": "derived from Clarifier outlet component-flow vectors and their positive flow factors",
-    "overflow_tss_closure_equality": "t_X^T g_E = q_E X_ref exp(g_log(theta, c_N))",
+    "overflow_tss_closure_equality": "t_X^T g_E = q_E X_ref exp(g_log(controls, c_N))",
     "overflow_tss_closure_calibration": "out-of-fold predictions for development projection scales and trust calibration; final frozen closure for post-selection holdout and optimization",
     "overflow_tss_closure_preserves_convex_projection": true,
     "clarifier_inventory_bounds": "tight endpoint-envelope bounds implemented as two division-free linear rows",
@@ -131,19 +171,30 @@
     "solver": "OSQP",
     "independent_multiplier_reconstruction": "bounded-variable least squares active-set method (BVLS); a deterministic BVLS representation is reported when multipliers are nonunique, without a minimum-multiplier-norm claim",
     "multiplier_reconstruction_uses_solver_duals": false,
-    "multiplier_reconstruction_revision_reason": "TRF premature termination produced a false stationarity rejection despite an accepted primal OSQP solution; BVLS resolves the fixed finite bounded least-squares problem directly",
     "cold_retry_sequence": [
-      {"rho": "OSQP default", "adaptive_rho": "OSQP default", "maximum_iterations": 100000},
-      {"rho": 0.01, "adaptive_rho": false, "maximum_iterations": 200000},
-      {"rho": 10.0, "adaptive_rho": false, "maximum_iterations": 200000}
+      {
+        "rho": "OSQP default",
+        "adaptive_rho": "OSQP default",
+        "maximum_iterations": 100000
+      },
+      {
+        "rho": 0.01,
+        "adaptive_rho": false,
+        "maximum_iterations": 200000
+      },
+      {
+        "rho": 10.0,
+        "adaptive_rho": false,
+        "maximum_iterations": 200000
+      }
     ],
     "retry_changes_qp": false,
-    "active_set_tolerance": 1e-7,
-    "equality_tolerance": 1e-8,
-    "inequality_tolerance": 1e-8,
-    "stationarity_tolerance": 1e-8,
-    "dual_tolerance": 1e-8,
-    "complementarity_tolerance": 1e-8,
+    "active_set_tolerance": 1e-07,
+    "equality_tolerance": 1e-08,
+    "inequality_tolerance": 1e-08,
+    "stationarity_tolerance": 1e-08,
+    "dual_tolerance": 1e-08,
+    "complementarity_tolerance": 1e-08,
     "nonnegativity_tolerance": 1e-10
   },
   "trust": {
@@ -153,15 +204,13 @@
       "particulate_split",
       "reactor_residual"
     ],
-    "clarifier_flux_diagnostic_retired": true,
-    "clarifier_flux_retirement_reason": "no scalar function of outlet flows and aggregate Clarifier inventory reproduces the discarded layer-flux equations",
     "clarifier_layer_flux_audit_scope": "smooth-direct and exact mechanistic states only"
   },
   "assessment_execution": {
     "revised_scientific_thresholds_are_frozen": true,
     "scientific_gate_failures_are_recorded": true,
     "scientific_gate_failures_are_advisory_for_workflow_execution": true,
-    "failed_gate_results_are_article_eligible": false,
+    "failed_gate_results_are_study_eligible": false,
     "refit_after_gate_failure": false,
     "replace_assessment_rows_after_gate_failure": false,
     "hard_failures": [
@@ -173,9 +222,9 @@
   },
   "optimization": {
     "protocol": "single_start_exact_qp_active_set",
-    "runner_protocol": "single_center_local_exact_qp_no_minimum_srt_v2",
-    "surrogate_protocol": "seven_variable_exact_qp_single_start_v1",
-    "direct_protocol": "smooth_direct_single_center_v1",
+    "runner_protocol": "single_center_local_exact_qp_no_minimum_srt",
+    "surrogate_protocol": "seven_variable_exact_qp_single_start",
+    "mechanistic_protocol": "smooth_mechanistic_single_center",
     "start_count": 1,
     "start_definition": "componentwise center of the normalized seven-control box",
     "local_solution_accepted": true,
@@ -197,8 +246,8 @@
       "maximum_iterations": 250,
       "maximum_function_evaluations": 250,
       "initial_trust_region_radius": 0.25,
-      "final_trust_region_radius": 1e-6,
-      "feasibility_tolerance": 1e-6,
+      "final_trust_region_radius": 1e-06,
+      "feasibility_tolerance": 1e-06,
       "selection": "smallest-objective validated feasible visited point, with the declared relative objective and lexicographic tie rules",
       "selected_point_cold_replayed": true,
       "endpoint_active_set_and_upper_kkt_reaudited": true,
@@ -208,14 +257,17 @@
       "fallback_failure_stops_other_cases": false
     },
     "surrogate_local_convergence_certification": {
-      "protocol": "exact_qp_two_scale_accelerated_feasible_poll_v3",
+      "protocol": "exact_qp_two_scale_accelerated_feasible_poll",
       "applied_after_primary_search": true,
-      "poll_radii_normalized": [0.001, 0.0001],
+      "poll_radii_normalized": [
+        0.001,
+        0.0001
+      ],
       "coarse_directions": "positive-spanning signed coordinate basis (14 directions)",
       "fine_directions": "signed coordinate basis, all signed pairwise coordinate diagonals, and the eight vertices of a seven-dimensional Helmert regular simplex (106 directions)",
-      "absolute_decrease_tolerance": 1e-8,
-      "relative_decrease_tolerance": 1e-8,
-      "upper_feasibility_tolerance": 1e-6,
+      "absolute_decrease_tolerance": 1e-08,
+      "relative_decrease_tolerance": 1e-08,
+      "upper_feasibility_tolerance": 1e-06,
       "feasible_direction_rank_policy": "reported as a diagnostic only because the feasible cone at an active constrained endpoint need not span all seven dimensions",
       "minimum_feasible_nonzero_directions_per_level": 1,
       "direction_rank_tolerance": 1e-10,
@@ -230,18 +282,14 @@
       "finite_poll_claims_classical_stationarity": false,
       "failure_action": "retain the best feasible incumbent, label certification unresolved, and continue"
     },
-    "surrogate_embedded_kkt_ipopt_enabled": false,
-    "surrogate_gap_sequence": [],
-    "surrogate_stage_warm_start": "not applicable; the embedded-KKT IPOPT continuation is retired",
     "upper_constraint_normalization": "fixed positive precomputed scale for every row; never iterate-dependent",
-    "surrogate_final_refinement": "retired as a post-continuation refinement; exact cold projection QP with active-set sensitivities is now the primary surrogate optimizer",
     "surrogate_failure_action": "record the case failure and continue with the remaining cases and downstream audits",
     "optimization_case_failure_stops_workflow": false,
     "retain_failed_and_unresolved_case_audits": true,
-    "direct_start_count": 1,
-    "direct_start_definition": "same deterministic componentwise box center",
-    "direct_smoothing_continuation_retained": true,
-    "direct_failure_recovery": {
+    "mechanistic_start_count": 1,
+    "mechanistic_start_definition": "same deterministic componentwise box center",
+    "mechanistic_smoothing_continuation_retained": true,
+    "mechanistic_failure_recovery": {
       "maximum_attempts_after_primary_failure": 1,
       "start": "the independently projected surrogate endpoint for the same case",
       "smoothing_sequence": "unchanged three-stage direct sequence",
@@ -251,50 +299,90 @@
     "nominal_case_count": 1,
     "robustness_case_count": 10,
     "smooth_sequence": [
-      {"epsilon": 1e-6, "receiver_half_width_g_m3": 10.0},
-      {"epsilon": 1e-7, "receiver_half_width_g_m3": 3.0},
-      {"epsilon": 1e-8, "receiver_half_width_g_m3": 1.0}
+      {
+        "epsilon": 1e-06,
+        "receiver_half_width_g_m3": 10.0
+      },
+      {
+        "epsilon": 1e-07,
+        "receiver_half_width_g_m3": 3.0
+      },
+      {
+        "epsilon": 1e-08,
+        "receiver_half_width_g_m3": 1.0
+      }
     ],
     "maximum_iterations_per_stage": 2500,
     "maximum_iterations_per_stage_scope": "direct smooth-mechanistic continuation only; no surrogate IPOPT stages are executed",
-    "derivative_steps": [1e-6, 5e-7],
-    "derivative_relative_tolerance": 1e-5,
-    "upper_kkt_tolerance": 1e-6,
+    "derivative_steps": [
+      1e-06,
+      5e-07
+    ],
+    "derivative_relative_tolerance": 1e-05,
+    "upper_kkt_tolerance": 1e-06,
     "objective_tie_relative_tolerance": 1e-10
   },
   "engineering": {
     "underflow_tss_max_g_m3": 15000.0,
     "feed_tss_min_g_m3": 1.0,
     "external_solids_loss_min_g_m3": 1.0,
-    "descriptive_quantities": ["srt_d", "sor_m_d", "slr_kg_m2_d"]
+    "descriptive_quantities": [
+      "srt_d",
+      "sor_m_d",
+      "slr_kg_m2_d"
+    ]
   },
   "objective": {
-    "weights": [0.50, 0.15, 0.20, 0.05, 0.05, 0.05],
-    "quality_weights": [0.25, 0.25, 0.25, 0.25],
+    "weights": [
+      0.5,
+      0.15,
+      0.2,
+      0.05,
+      0.05,
+      0.05
+    ],
+    "quality_weights": [
+      0.25,
+      0.25,
+      0.25,
+      0.25
+    ],
     "aeration_reference_m3_d": 423000.0,
     "underflow_tss_reference_g_m3": 15000.0
   },
   "reporting": {
     "nearest_rank_probability": 0.95,
-    "timing_protocol": "primary_route_time_v1",
+    "timing_protocol": "primary_route_time",
     "timing_metric": "Time",
     "timing_unit": "s",
     "timing_source": "primary route search duration from robustness_01 through robustness_10",
     "timing_case_count": 10,
     "timing_aggregation": "arithmetic mean across available robustness-case Time records, with count, total, median, interquartile range, nearest-rank 95th percentile, and maximum also reported",
     "untouched_test_repeated_inference_benchmark_executed": false,
-    "validation_protocol": "casewise_exact_common_reference_no_minimum_srt_v4",
+    "validation_protocol": "casewise_exact_common_reference_no_minimum_srt",
     "untouched_test_smooth_reference_equivalence_executed": false,
     "common_reference_scope": "every available selected decision in the nominal and ten robustness cases",
     "common_reference_model": "exact nonsmooth mechanistic steady-state model",
     "common_reference_start_count_per_decision": 2,
     "common_reference_acceptance": "both exact starts accepted, agreement under generation and fixed state scales, categorical branch agreement unless any mismatching branch is within the declared ambiguity band, physical/stability acceptance, and engineering feasibility",
     "branch_boundary_policy": "record as a qualifier; accept when exact physical checks and required replay agreement pass",
-    "required_methods": ["raw", "projected", "optimizer_native", "exact_mechanistic_start_1", "exact_mechanistic_start_2"],
+    "required_methods": [
+      "raw",
+      "projected",
+      "optimizer_native",
+      "exact_mechanistic_start_1",
+      "exact_mechanistic_start_2"
+    ],
     "track_mass_conservation": true,
     "track_nonnegativity": true,
-    "generation_attempt_denominators": ["development_candidates_attempted", "test_candidates_attempted"],
-    "downstream_dataset_denominators": ["development_accepted_observed", "post_selection_holdout_accepted_observed"],
+    "generation_attempt_denominators": [
+      "development_candidates_attempted",
+      "test_candidates_attempted"
+    ],
+    "downstream_dataset_denominators": [
+      "development_accepted_observed",
+      "post_selection_holdout_accepted_observed"
+    ],
     "holdout_interpretation": "descriptive post-selection evidence only; excluded from fitting, scaling, ridge selection, trust calibration, and scientific eligibility gates",
     "report_candidate_to_accepted_slot_provenance": true,
     "retain_zero_count_failure_classes": true
