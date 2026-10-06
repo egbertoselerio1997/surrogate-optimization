@@ -1,17 +1,15 @@
 from __future__ import annotations
-
 import pickle
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-
 import numpy as np
-
-from closed_loop.projection import NetworkLayout
-from closed_loop.v3_parallel import BatchProgress, run_resumable_batches
-from closed_loop.v3_trust import ParticulateSplitRows, SmoothReactorRows
-
+from surrogate_optimization.surrogate.projection import NetworkLayout
+from surrogate_optimization.runtime.parallel import BatchProgress
+from surrogate_optimization.runtime.parallel import run_resumable_batches
+from surrogate_optimization.optimization.trust import ParticulateSplitRows
+from surrogate_optimization.optimization.trust import SmoothReactorRows
 
 _OFFSET = 0
 _FAIL_START: int | None = None
@@ -70,7 +68,7 @@ class ResumableBatchTests(unittest.TestCase):
 
     def test_serial_fallback_avoids_process_pool_and_keeps_row_order(self) -> None:
         with patch(
-            "closed_loop.v3_parallel.ProcessPoolExecutor",
+            "surrogate_optimization.runtime.parallel.ProcessPoolExecutor",
             side_effect=AssertionError("serial execution constructed a process pool"),
         ):
             batches = self._run(None, workers=1)
@@ -97,7 +95,6 @@ class ResumableBatchTests(unittest.TestCase):
             self.assertTrue((root / "batch_000000_000002.npz").is_file())
             self.assertFalse((root / "batch_000002_000004.npz").exists())
             self.assertEqual(list(root.glob("*.tmp")), [])
-
             _CALLS.clear()
             updates: list[BatchProgress] = []
             batches = self._run(root, workers=1, progress=updates.append)
@@ -116,12 +113,9 @@ class ResumableBatchTests(unittest.TestCase):
             _CALLS.clear()
             self._run(root, workers=1)
             self.assertEqual(_CALLS, [(2, 4)])
-
             _CALLS.clear()
             self._run(root, workers=1, contract="contract-b")
-            self.assertEqual(
-                _CALLS, [(0, 2), (2, 4), (4, 6), (6, 7)]
-            )
+            self.assertEqual(_CALLS, [(0, 2), (2, 4), (4, 6), (6, 7)])
 
     def test_worker_failure_never_publishes_failed_batch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -135,7 +129,9 @@ class ResumableBatchTests(unittest.TestCase):
 
 
 class SpawnSafeTrustCallbackTests(unittest.TestCase):
-    def test_particulate_callback_pickle_round_trip_preserves_numeric_formula(self) -> None:
+    def test_particulate_callback_pickle_round_trip_preserves_numeric_formula(
+        self,
+    ) -> None:
         layout = NetworkLayout()
         particulate = (1, 2, 3)
         scale = np.asarray([2.0, 3.0, 4.0])
@@ -146,8 +142,8 @@ class SpawnSafeTrustCallbackTests(unittest.TestCase):
         final = response[layout.reactor_slice(layout.stage_count - 1)]
         underflow = response[layout.underflow_flow_slice]
         expected = (
-            (weights @ final) * underflow[list(particulate)]
-            - (weights @ underflow) * final[list(particulate)]
+            weights @ final * underflow[list(particulate)]
+            - weights @ underflow * final[list(particulate)]
         ) / scale
         np.testing.assert_allclose(
             restored(np.zeros(7), response, response, np.zeros(20)), expected
@@ -157,25 +153,18 @@ class SpawnSafeTrustCallbackTests(unittest.TestCase):
         from types import SimpleNamespace
 
         callback = SmoothReactorRows(
-            direct_assets=SimpleNamespace(
-                balance_scale=np.ones(105),
-                marker="pickleable",
+            mechanistic_assets=SimpleNamespace(
+                balance_scale=np.ones(105), marker="pickleable"
             )
         )
         restored = pickle.loads(pickle.dumps(callback))
-        self.assertEqual(restored.direct_assets.marker, "pickleable")
-        self.assertEqual(restored.epsilon, 1.0e-8)
+        self.assertEqual(restored.mechanistic_assets.marker, "pickleable")
+        self.assertEqual(restored.epsilon, 1e-08)
         residual = np.arange(1.0, 101.0)
         with patch(
-            "closed_loop.v3_trust._smooth_reactor_residual",
+            "surrogate_optimization.optimization.mechanistic._smooth_reactor_residual",
             return_value=residual,
         ) as mocked:
-            observed = restored(
-                np.ones(7), np.ones(161), np.ones(161), np.ones(20)
-            )
+            observed = restored(np.ones(7), np.ones(161), np.ones(161), np.ones(20))
         np.testing.assert_array_equal(observed, residual)
-        self.assertEqual(mocked.call_args.args[-1], 1.0e-8)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(mocked.call_args.args[-1], 1e-08)

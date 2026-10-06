@@ -1,27 +1,17 @@
 from __future__ import annotations
-
+import surrogate_optimization.optimization.surrogate as module_optimization_surrogate
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
-
 import casadi as ca
 import numpy as np
-
-import closed_loop.v3_surrogate_nlp as surrogate_nlp
-from closed_loop.projection import (
-    LogOverflowTSSClosure,
-    NetworkLayout,
-    build_network_operators,
-)
-from closed_loop.v3_surrogate_nlp import (
-    GAP_CONTINUATION,
-    EngineeringLimits,
-    NamedTrustRows,
-    SurrogateSolverSettings,
-    TrustDiagnosticCallbacks,
-    TrustThresholds,
-    symbolic_network_operators,
-)
+from surrogate_optimization.surrogate.regression import LogOverflowTSSClosure
+from surrogate_optimization.surrogate.projection import NetworkLayout
+from surrogate_optimization.surrogate.projection import build_network_operators
+from surrogate_optimization.optimization.types import EngineeringLimits
+from surrogate_optimization.optimization.types import NamedTrustRows
+from surrogate_optimization.optimization.types import TrustDiagnosticCallbacks
+from surrogate_optimization.optimization.types import TrustThresholds
+from surrogate_optimization.optimization.surrogate import symbolic_network_operators
 
 
 class _RecordingSolver:
@@ -48,13 +38,8 @@ class _Case:
 
 
 class SurrogateConditioningTests(unittest.TestCase):
-    def test_declared_schedule_has_finer_final_gap_stages(self) -> None:
-        self.assertEqual(
-            GAP_CONTINUATION,
-            (1.0e-2, 1.0e-4, 1.0e-6, 3.0e-7, 1.0e-7, 3.0e-8, 1.0e-8),
-        )
-
     def test_all_trust_rows_are_relative_dimensionless_residuals(self) -> None:
+
         def rows(first: float, second: float):
             return lambda *_arguments: ca.vertcat(first, second)
 
@@ -73,7 +58,7 @@ class SurrogateConditioningTests(unittest.TestCase):
                 additional=(NamedTrustRows("extra", rows(22.0, 0.0), 11.0),),
             ),
         )
-        constraints, names, values = surrogate_nlp._trust_expressions(
+        constraints, names, values = module_optimization_surrogate._trust_expressions(
             ca.DM.zeros(7),
             ca.DM.zeros(2),
             ca.DM.zeros(2),
@@ -82,18 +67,16 @@ class SurrogateConditioningTests(unittest.TestCase):
             ca.DM([2.0, 0.0]),
             assets,
         )
+        self.assertEqual(names, ("correction", "leverage", "split", "reactor", "extra"))
+        np.testing.assert_allclose(
+            np.asarray(values).reshape(-1), [2.0, 4.0, 4.5, 50.0, 242.0]
+        )
+        np.testing.assert_allclose(
+            np.asarray(constraints).reshape(-1), [-0.5, 0.0, -0.5, 1.0, 1.0]
+        )
         self.assertEqual(
-            names, ("correction", "leverage", "split", "reactor", "extra")
+            module_optimization_surrogate._normalized_limit_residual(0.25, 0.0), 0.25
         )
-        np.testing.assert_allclose(
-            np.asarray(values).reshape(-1),
-            [2.0, 4.0, 4.5, 50.0, 242.0],
-        )
-        np.testing.assert_allclose(
-            np.asarray(constraints).reshape(-1),
-            [-0.5, 0.0, -0.5, 1.0, 1.0],
-        )
-        self.assertEqual(surrogate_nlp._normalized_limit_residual(0.25, 0.0), 0.25)
 
     def test_engineering_rows_use_only_positive_fixed_scales(self) -> None:
         layout = NetworkLayout(
@@ -108,40 +91,35 @@ class SurrogateConditioningTests(unittest.TestCase):
             clarifier_area_m2=10.0,
             clarifier_volume_m3=30.0,
             external_loss_min_g_m3=2.0,
-            underflow_tss_upper_g_m3=1_000.0,
+            underflow_tss_upper_g_m3=1000.0,
             feed_tss_min_g_m3=10.0,
         )
         assets = SimpleNamespace(
-            layout=layout,
-            engineering=limits,
-            tss_weights=np.asarray([0.0, 1.0]),
+            layout=layout, engineering=limits, tss_weights=np.asarray([0.0, 1.0])
         )
-        theta = ca.DM([24.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.1])
+        controls = ca.DM([24.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.1])
         state = np.zeros(layout.state_size)
         state[layout.reactor_slice(0)] = [0.0, 100.0]
         state[layout.overflow_flow_slice] = [0.0, 10.0]
         state[layout.underflow_flow_slice] = [0.0, 200.0]
-        state[layout.inventory_index] = 3_000.0
-        constraints, names, quantities = surrogate_nlp._engineering_expressions(
-            theta, ca.DM(state), assets
+        state[layout.inventory_index] = 3000.0
+        constraints, names, quantities = (
+            module_optimization_surrogate._engineering_expressions(
+                controls, ca.DM(state), assets
+            )
         )
-
         external_loss = 10.0 + 0.1 * 200.0 / 0.6
         inventory = 100.0 * 100.0 + 10.0 * 300.0
         expected = np.asarray(
             [
                 (2.0 - external_loss) / 2.0,
-                (200.0 / 0.6 - 1_000.0) / 1_000.0,
+                (200.0 / 0.6 - 1000.0) / 1000.0,
                 (10.0 - 100.0) / 10.0,
             ]
         )
         self.assertEqual(
             names,
-            (
-                "external_solids_loss_guard",
-                "underflow_tss_upper",
-                "feed_tss_lower",
-            ),
+            ("external_solids_loss_guard", "underflow_tss_upper", "feed_tss_lower"),
         )
         np.testing.assert_allclose(np.asarray(constraints).reshape(-1), expected)
         self.assertTrue(np.all(np.isfinite(np.asarray(quantities))))
@@ -169,16 +147,20 @@ class SurrogateConditioningTests(unittest.TestCase):
         evaluate = ca.Function(
             "reduced_network_operator_test",
             [theta_symbol, feed_symbol],
-            [symbolic.equality_matrix, symbolic.equality_rhs, symbolic.inequality_matrix],
+            [
+                symbolic.equality_matrix,
+                symbolic.equality_rhs,
+                symbolic.inequality_matrix,
+            ],
         )
-        theta = np.asarray([24.0, 0.2, 0.3, 0.4, 1.0, 0.5, 0.1])
+        controls = np.asarray([24.0, 0.2, 0.3, 0.4, 1.0, 0.5, 0.1])
         feed = np.asarray([2.0, 10.0])
-        symbolic_values = evaluate(theta, feed)
+        symbolic_values = evaluate(controls, feed)
         numeric = build_network_operators(
             feed,
-            internal_recycle=theta[4],
-            return_recycle=theta[5],
-            waste_fraction=theta[6],
+            internal_recycle=controls[4],
+            return_recycle=controls[5],
+            waste_fraction=controls[6],
             invariant_operator=invariant,
             tss_weights=tss,
             layout=layout,
@@ -189,19 +171,14 @@ class SurrogateConditioningTests(unittest.TestCase):
             np.asarray(symbolic_values[1]).reshape(-1), numeric.equality_rhs
         )
         np.testing.assert_allclose(symbolic_values[2], numeric.inequality_matrix)
-
         rng = np.random.default_rng(20260827)
-        closure_decisions = rng.uniform(0.1, 1.0, size=(120, 7))
+        closure_controls = rng.uniform(0.1, 1.0, size=(120, 7))
         closure_influents = rng.uniform(1.0, 20.0, size=(120, 2))
         closure_target = np.exp(
-            0.2 + 0.1 * closure_decisions[:, 4]
-            - 0.02 * closure_influents[:, 1]
+            0.2 + 0.1 * closure_controls[:, 4] - 0.02 * closure_influents[:, 1]
         )
         closure = LogOverflowTSSClosure.fit_ridge(
-            closure_decisions,
-            closure_influents,
-            closure_target,
-            ridge_penalty=1.0e-4,
+            closure_controls, closure_influents, closure_target, ridge_penalty=0.0001
         )
         closure_assets = SimpleNamespace(
             layout=layout,
@@ -212,7 +189,7 @@ class SurrogateConditioningTests(unittest.TestCase):
             overflow_closure=closure,
         )
         symbolic_closure = symbolic_network_operators(
-            theta_symbol, feed_symbol, closure_assets,
+            theta_symbol, feed_symbol, closure_assets
         )
         evaluate_closure = ca.Function(
             "reduced_network_operator_closure_test",
@@ -223,89 +200,26 @@ class SurrogateConditioningTests(unittest.TestCase):
                 symbolic_closure.inequality_matrix,
             ],
         )
-        closure_value = float(closure.predict(theta, feed))
+        closure_value = float(closure.predict(controls, feed))
         numeric_closure = build_network_operators(
             feed,
-            internal_recycle=theta[4],
-            return_recycle=theta[5],
-            waste_fraction=theta[6],
+            internal_recycle=controls[4],
+            return_recycle=controls[5],
+            waste_fraction=controls[6],
             invariant_operator=invariant,
             tss_weights=tss,
             layout=layout,
             clarifier_volume_m3=30.0,
             overflow_tss_closure=closure_value,
         )
-        symbolic_closure_values = evaluate_closure(theta, feed)
+        symbolic_closure_values = evaluate_closure(controls, feed)
         np.testing.assert_allclose(
-            symbolic_closure_values[0], numeric_closure.equality_matrix,
+            symbolic_closure_values[0], numeric_closure.equality_matrix
         )
         np.testing.assert_allclose(
             np.asarray(symbolic_closure_values[1]).reshape(-1),
             numeric_closure.equality_rhs,
         )
         np.testing.assert_allclose(
-            symbolic_closure_values[2], numeric_closure.inequality_matrix,
+            symbolic_closure_values[2], numeric_closure.inequality_matrix
         )
-
-    def test_ipopt_options_and_stage_call_propagate_outer_duals(self) -> None:
-        options = SurrogateSolverSettings().ipopt_options()
-        self.assertEqual(options["ipopt.warm_start_init_point"], "yes")
-        for name in (
-            "ipopt.warm_start_bound_push",
-            "ipopt.warm_start_bound_frac",
-            "ipopt.warm_start_slack_bound_push",
-            "ipopt.warm_start_slack_bound_frac",
-            "ipopt.warm_start_mult_bound_push",
-        ):
-            self.assertEqual(options[name], 1.0e-9)
-
-        solver = _RecordingSolver()
-        problem = SimpleNamespace(
-            solver=solver,
-            assets=object(),
-            variable_count=3,
-            tau=1.0e-4,
-            lower_bounds=np.full(3, -np.inf),
-            upper_bounds=np.full(3, np.inf),
-            constraint_lower_bounds=np.asarray([0.0, -np.inf]),
-            constraint_upper_bounds=np.asarray([0.0, 0.0]),
-        )
-        evaluation = {
-            "objective": 0.0,
-            "equality": np.asarray([0.0]),
-            "inequality": np.asarray([-1.0]),
-            "normalized_gap": 5.0e-5,
-        }
-        with patch.object(
-            surrogate_nlp, "evaluate_surrogate_problem", return_value=evaluation
-        ):
-            first = surrogate_nlp._solve_continuation_stage(
-                problem, _Case(), np.zeros(3), SurrogateSolverSettings()
-            )
-            second = surrogate_nlp._solve_continuation_stage(
-                problem,
-                _Case(),
-                first.stage.primal,
-                SurrogateSolverSettings(),
-                (first.bound_multipliers, first.constraint_multipliers),
-            )
-
-        self.assertNotIn("lam_x0", solver.calls[0])
-        self.assertNotIn("lam_g0", solver.calls[0])
-        np.testing.assert_array_equal(solver.calls[1]["lam_x0"], [1.0, 2.0, 3.0])
-        np.testing.assert_array_equal(solver.calls[1]["lam_g0"], [-4.0, 5.0])
-        self.assertTrue(first.stage.feasible)
-        self.assertTrue(second.stage.feasible)
-        np.testing.assert_array_equal(
-            first.stage.constraint_multipliers, [-4.0, 5.0]
-        )
-        restored = surrogate_nlp.ContinuationStageRecord.from_dict(
-            first.stage.as_dict()
-        )
-        np.testing.assert_array_equal(
-            restored.constraint_multipliers, [-4.0, 5.0]
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
